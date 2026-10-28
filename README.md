@@ -1,4 +1,4 @@
-# Stocke — inventaire partagé
+# HDE-Inventaire — inventaire partagé
 
 MVP web pour suivre un inventaire commun : recherche, catégories, emplacements, seuils d’alerte, édition et suppression. Stack : Next.js (App Router), React, TypeScript, Tailwind CSS, Supabase Auth + Postgres + RLS + Realtime, GitHub et Vercel.
 

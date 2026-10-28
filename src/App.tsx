@@ -115,7 +115,7 @@ function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <a className="brand" href="#"><span className="brand-mark"><Boxes size={21} strokeWidth={2.3} /></span><span>stocke<span className="brand-dot">.</span></span></a>
+        <a className="brand" href="#"><span className="brand-mark"><Boxes size={21} strokeWidth={2.3} /></span><span>HDE-Inventaire</span></a>
         <div className="workspace-switch"><div className="workspace-avatar">A</div><div className="workspace-text"><strong>Atelier du coin</strong><span>Espace partagé</span></div><ChevronDown size={16} /></div>
         <div className="nav-label">ESPACE DE TRAVAIL</div>
         <nav className="nav-list"><a className="nav-link active" href="#"><LayoutDashboard size={18} /> Vue d’ensemble</a><a className="nav-link" href="#inventaire"><Package size={18} /> Inventaire <span className="nav-count">{items.length}</span></a><a className="nav-link" href="#alertes" onClick={() => setShowLowOnly(true)}><Bell size={18} /> Alertes{lowItems.length > 0 && <span className="alert-count">{lowItems.length}</span>}</a></nav>
