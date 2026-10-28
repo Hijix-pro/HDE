@@ -43,3 +43,23 @@ td{border-color:#f0e8df}
 .modal-actions{border-color:#eee5db}
 .status-dot,.footer-dot{background:#899265}
 @media(max-width:720px){.brand{font-size:17px}}
+
+/* Sidebar navigation and secondary views */
+.brand{border:0;background:transparent;text-align:left;cursor:pointer}
+.workspace-switch{width:100%;font-family:inherit;text-align:left;color:inherit;cursor:pointer}
+.workspace-switch:hover{background:#fbf3e8;border-color:#dfcbb5}
+.nav-link{cursor:pointer}
+.nav-link:focus-visible,.brand:focus-visible,.workspace-switch:focus-visible,.mobile-menu:focus-visible{outline:2px solid #b96d48;outline-offset:2px}
+.info-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.info-card{min-height:170px;padding:20px;background:#fffdf9;border:1px solid #ece2d7;border-radius:10px}
+.info-label{display:block;margin-bottom:12px;color:#9b755b;font-size:9px;font-weight:700;letter-spacing:.8px}
+.info-card h2{margin:0 0 8px;color:#352b25;font:700 15px Manrope,sans-serif;overflow-wrap:anywhere}
+.info-card p{margin:0 0 14px;color:#83756a;font-size:11px;line-height:1.65}
+.info-card .button{margin-top:4px}
+.mobile-nav-backdrop{display:none}
+@media(max-width:720px){
+  .sidebar.mobile-open{display:flex;z-index:6;width:min(300px,85vw);box-shadow:18px 0 36px #38271f30}
+  .mobile-nav-backdrop{display:block;position:fixed;inset:0;z-index:5;border:0;background:#38271f66}
+  .info-grid{grid-template-columns:1fr;gap:10px}
+  .info-card{min-height:0;padding:16px}
+}

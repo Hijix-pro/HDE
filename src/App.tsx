@@ -13,6 +13,7 @@ const starterItems: Item[] = [
 ]
 
 const blankItem: ItemInput = { name: '', category: 'Épicerie', quantity: 0, unit: 'unités', min_quantity: 0, location: '' }
+type Page = 'overview' | 'inventory' | 'alerts' | 'settings' | 'help'
 
 function App() {
   const [items, setItems] = useState<Item[]>(starterItems)
@@ -32,6 +33,8 @@ function App() {
   const [saveError, setSaveError] = useState('')
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
+  const [activePage, setActivePage] = useState<Page>('overview')
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     if (!supabase) { setAuthReady(true); return }
@@ -79,6 +82,13 @@ function App() {
   }
 
   async function signOut() { await supabase?.auth.signOut(); setUserEmail(null) }
+  function navigate(page: Page) {
+    setActivePage(page)
+    setMobileMenuOpen(false)
+    setShowLowOnly(page === 'alerts')
+    setSearch('')
+    setCategory('Toutes les catégories')
+  }
   function openNew() { setEditing(null); setForm(blankItem); setSaveError(''); setModalOpen(true) }
   function openEdit(item: Item) { setEditing(item); setForm({ name: item.name, category: item.category, quantity: item.quantity, unit: item.unit, min_quantity: item.min_quantity, location: item.location }); setSaveError(''); setModalOpen(true) }
 
@@ -110,44 +120,65 @@ function App() {
     setNotice('Article supprimé.')
   }
 
+  const pageLabels: Record<Page, string> = {
+    overview: 'Vue d’ensemble',
+    inventory: 'Inventaire',
+    alerts: 'Alertes de stock',
+    settings: 'Paramètres',
+    help: 'Aide & support',
+  }
+
   if (!authReady) return <div className="loading-screen"><div className="brand-mark"><Boxes size={21} /></div><span>Ouverture de votre espace…</span></div>
 
   return (
     <div className="app-shell">
-      <aside className="sidebar">
-        <a className="brand" href="#"><span className="brand-mark"><Boxes size={21} strokeWidth={2.3} /></span><span>HDE-Inventaire</span></a>
-        <div className="workspace-switch"><div className="workspace-avatar">A</div><div className="workspace-text"><strong>Atelier du coin</strong><span>Espace partagé</span></div><ChevronDown size={16} /></div>
+      <aside className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
+        <button className="brand" onClick={() => navigate('overview')}><span className="brand-mark"><Boxes size={21} strokeWidth={2.3} /></span><span>HDE-Inventaire</span></button>
+        <button className="workspace-switch" onClick={() => navigate('settings')} aria-label="Ouvrir les paramètres de l’espace"><div className="workspace-avatar">A</div><div className="workspace-text"><strong>Atelier du coin</strong><span>Espace partagé</span></div><ChevronDown size={16} /></button>
         <div className="nav-label">ESPACE DE TRAVAIL</div>
-        <nav className="nav-list"><a className="nav-link active" href="#"><LayoutDashboard size={18} /> Vue d’ensemble</a><a className="nav-link" href="#inventaire"><Package size={18} /> Inventaire <span className="nav-count">{items.length}</span></a><a className="nav-link" href="#alertes" onClick={() => setShowLowOnly(true)}><Bell size={18} /> Alertes{lowItems.length > 0 && <span className="alert-count">{lowItems.length}</span>}</a></nav>
-        <div className="sidebar-bottom"><div className="tip-card"><div className="tip-icon"><ShieldCheck size={16} /></div><strong>Tout le monde à jour</strong><p>Les changements sont partagés instantanément avec votre équipe.</p></div><button className="nav-link subtle"><Settings2 size={18} /> Paramètres</button><button className="nav-link subtle"><CircleHelp size={18} /> Aide & support</button></div>
+        <nav className="nav-list" aria-label="Navigation principale">
+          <button className={`nav-link ${activePage === 'overview' ? 'active' : ''}`} onClick={() => navigate('overview')} aria-current={activePage === 'overview' ? 'page' : undefined}><LayoutDashboard size={18} /> Vue d’ensemble</button>
+          <button className={`nav-link ${activePage === 'inventory' ? 'active' : ''}`} onClick={() => navigate('inventory')} aria-current={activePage === 'inventory' ? 'page' : undefined}><Package size={18} /> Inventaire <span className="nav-count">{items.length}</span></button>
+          <button className={`nav-link ${activePage === 'alerts' ? 'active' : ''}`} onClick={() => navigate('alerts')} aria-current={activePage === 'alerts' ? 'page' : undefined}><Bell size={18} /> Alertes{lowItems.length > 0 && <span className="alert-count">{lowItems.length}</span>}</button>
+        </nav>
+        <div className="sidebar-bottom"><div className="tip-card"><div className="tip-icon"><ShieldCheck size={16} /></div><strong>Tout le monde à jour</strong><p>Les changements sont partagés instantanément avec votre équipe.</p></div><button className={`nav-link subtle ${activePage === 'settings' ? 'active' : ''}`} onClick={() => navigate('settings')} aria-current={activePage === 'settings' ? 'page' : undefined}><Settings2 size={18} /> Paramètres</button><button className={`nav-link subtle ${activePage === 'help' ? 'active' : ''}`} onClick={() => navigate('help')} aria-current={activePage === 'help' ? 'page' : undefined}><CircleHelp size={18} /> Aide & support</button></div>
         <div className="profile-row"><div className="profile-avatar">{userEmail ? userEmail[0].toUpperCase() : 'CL'}</div><div className="profile-info"><strong>{userEmail ?? 'Camille Laurent'}</strong><span>{userEmail ? 'Membre' : 'Administratrice'}</span></div>{userEmail && <button className="icon-button" onClick={signOut} aria-label="Se déconnecter" title="Se déconnecter"><LogOut size={17} /></button>}</div>
       </aside>
 
       <main className="main-content">
-        <header className="topbar"><div className="breadcrumbs"><span>Espace de travail</span><span className="crumb-slash">/</span><strong>Vue d’ensemble</strong></div><div className="top-actions"><span className="sync-status"><span className="status-dot" /> {supabase && userEmail ? 'Synchronisé' : 'Aperçu'}</span><button className="avatar-stack" title="Membres de l’espace"><span>CL</span><span>+2</span></button><button className="mobile-menu" aria-label="Menu"><Menu size={20} /></button></div></header>
+        <header className="topbar"><div className="breadcrumbs"><span>HDE-Inventaire</span><span className="crumb-slash">/</span><strong>{pageLabels[activePage]}</strong></div><div className="top-actions"><span className="sync-status"><span className="status-dot" /> {supabase && userEmail ? 'Synchronisé' : 'Aperçu'}</span><button className="avatar-stack" title="Membres de l’espace"><span>CL</span><span>+2</span></button><button className="mobile-menu" aria-label="Ouvrir le menu" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(open => !open)}><Menu size={20} /></button></div></header>
         <div className="content-wrap">
           {!isSupabaseConfigured && <div className="setup-banner"><div><strong>Mode aperçu</strong><span>Ajoutez vos identifiants Supabase pour partager les données en ligne.</span></div><a href="./README.md">Voir les étapes <span>↗</span></a></div>}
           {notice && <div className="notice"><Check size={16} /><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Fermer"><X size={15} /></button></div>}
-          <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> LUNDI 26 OCTOBRE 2026</div><h1>Bonjour Camille <span className="wave">✦</span></h1><p>Voici ce qui se passe dans votre inventaire aujourd’hui.</p></div><button className="button button-primary" onClick={openNew}><Plus size={17} /> Ajouter un article</button></section>
+          {activePage === 'overview' && <>
+          <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> VOTRE ESPACE DE TRAVAIL</div><h1>Bonjour Camille <span className="wave">✦</span></h1><p>Voici ce qui se passe dans votre inventaire aujourd’hui.</p></div><button className="button button-primary" onClick={openNew}><Plus size={17} /> Ajouter un article</button></section>
           <section className="stats-grid" aria-label="Résumé de l’inventaire">
             <article className="stat-card"><div className="stat-top"><span>Articles suivis</span><span className="stat-icon violet"><Package size={17} /></span></div><div className="stat-value">{items.length}<span className="stat-unit"> références</span></div><div className="stat-note"><span className="note-pill positive">+2</span><span>depuis la semaine dernière</span></div></article>
             <article className="stat-card"><div className="stat-top"><span>Unités en stock</span><span className="stat-icon green"><Boxes size={17} /></span></div><div className="stat-value">{totalUnits}<span className="stat-unit"> unités</span></div><div className="stat-note"><span className="note-muted">Toutes catégories confondues</span></div></article>
-            <article className="stat-card"><div className="stat-top"><span>À réapprovisionner</span><span className="stat-icon amber"><Bell size={17} /></span></div><div className="stat-value">{lowItems.length}<span className="stat-unit"> articles</span></div><div className="stat-note"><button className="text-link" onClick={() => setShowLowOnly(!showLowOnly)}>{showLowOnly ? 'Afficher tout' : 'Voir les alertes'} <span>→</span></button></div></article>
+            <article className="stat-card"><div className="stat-top"><span>À réapprovisionner</span><span className="stat-icon amber"><Bell size={17} /></span></div><div className="stat-value">{lowItems.length}<span className="stat-unit"> articles</span></div><div className="stat-note"><button className="text-link" onClick={() => navigate('alerts')}>Voir les alertes <span>→</span></button></div></article>
             <article className="stat-card activity-card"><div className="stat-top"><span>Activité récente</span><span className="stat-icon blue"><Activity size={17} /></span></div><div className="stat-value activity-value"><span className="activity-face">CL</span> Camille a modifié le stock</div><div className="stat-note"><span className="note-muted">Il y a 12 minutes</span></div></article>
           </section>
+          </>}
 
+          {(activePage === 'overview' || activePage === 'inventory' || activePage === 'alerts') && <>
+          {activePage !== 'overview' && <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> HDE-INVENTAIRE</div><h1>{pageLabels[activePage]}</h1><p>{activePage === 'alerts' ? 'Articles dont la quantité a atteint le seuil de réapprovisionnement.' : 'Recherchez et gérez les articles de votre espace.'}</p></div>{activePage !== 'alerts' && <button className="button button-primary" onClick={openNew}><Plus size={17} /> Ajouter un article</button>}</section>}
           <section className="inventory-panel" id="inventaire">
             <div className="panel-heading"><div><h2>Inventaire</h2><p>Retrouvez et gérez tous les articles de votre espace.</p></div><button className="button button-outline" onClick={() => setNotice('Export CSV : cette fonction sera ajoutée dans une prochaine étape.')}><ArrowDownUp size={16} /> Exporter</button></div>
             <div className="toolbar"><label className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un article..." /></label><div className="toolbar-controls"><label className="select-wrap"><SlidersHorizontal size={15} /><select value={category} onChange={e => setCategory(e.target.value)}>{categories.map(value => <option key={value}>{value}</option>)}</select><ChevronDown size={14} /></label><button className={`filter-button ${showLowOnly ? 'selected' : ''}`} onClick={() => setShowLowOnly(!showLowOnly)}><Bell size={15} /> En alerte {lowItems.length > 0 && <span>{lowItems.length}</span>}</button></div></div>
             <div className="table-wrap"><table><thead><tr><th>ARTICLE</th><th>CATÉGORIE</th><th>QUANTITÉ</th><th>EMPLACEMENT</th><th>MISE À JOUR</th><th></th></tr></thead><tbody>
               {filteredItems.map(item => <tr key={item.id}><td><div className="item-cell"><span className={`item-icon item-${item.category.toLowerCase().replace(/[^a-z]/g, '')}`}><Package size={17} /></span><strong>{item.name}</strong></div></td><td><span className="category-tag">{item.category}</span></td><td><div className="quantity-cell"><strong className={item.quantity <= item.min_quantity ? 'quantity-low' : ''}>{item.quantity}</strong><span>{item.unit}</span>{item.quantity <= item.min_quantity && <span className="low-badge">Bas</span>}</div></td><td><span className="location-cell"><span className="location-dot" />{item.location || '—'}</span></td><td><span className="date-cell">{userEmail ? 'À l’instant' : 'Aujourd’hui'}</span></td><td><div className="row-actions"><button onClick={() => openEdit(item)} aria-label={`Modifier ${item.name}`} title="Modifier"><Settings2 size={16} /></button><button onClick={() => void deleteItem(item)} aria-label={`Supprimer ${item.name}`} title="Supprimer"><X size={16} /></button></div></td></tr>)}
-              {filteredItems.length === 0 && <tr><td colSpan={6} className="empty-state">Aucun article ne correspond à votre recherche.</td></tr>}
+              {filteredItems.length === 0 && <tr><td colSpan={6} className="empty-state">{activePage === 'alerts' ? 'Aucun article à réapprovisionner pour le moment.' : 'Aucun article ne correspond à votre recherche.'}</td></tr>}
             </tbody></table></div>
             <div className="table-footer"><span>Affichage de <strong>{filteredItems.length}</strong> sur <strong>{items.length}</strong> articles</span><button className="button button-small" onClick={openNew}><Plus size={15} /> Nouvel article</button></div>
           </section>
+          </>}
+          {activePage === 'settings' && <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> HDE-INVENTAIRE</div><h1>Paramètres</h1><p>Informations sur votre espace et votre connexion.</p></div></section>}
+          {activePage === 'settings' && <section className="info-grid"><article className="info-card"><span className="info-label">ESPACE DE TRAVAIL</span><h2>Atelier du coin</h2><p>Inventaire partagé entre les membres de cet espace.</p></article><article className="info-card"><span className="info-label">COMPTE</span><h2>{userEmail ?? 'Mode aperçu'}</h2><p>{userEmail ? 'Vous êtes connecté à cet espace.' : 'Connectez-vous pour synchroniser les changements avec Supabase.'}</p>{userEmail && <button className="button button-outline" onClick={signOut}><LogOut size={16} /> Se déconnecter</button>}</article><article className="info-card"><span className="info-label">SYNCHRONISATION</span><h2>{supabase && userEmail ? 'Active' : 'Mode aperçu'}</h2><p>{supabase && userEmail ? 'Les changements d’inventaire sont enregistrés dans Supabase.' : 'Les changements ne sont pas encore partagés en ligne.'}</p></article></section>}
+          {activePage === 'help' && <><section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> HDE-INVENTAIRE</div><h1>Aide & support</h1><p>Quelques repères pour gérer votre inventaire.</p></div></section><section className="info-grid help-grid"><article className="info-card"><span className="info-label">AJOUTER UN ARTICLE</span><h2>Suivre un nouveau produit</h2><p>Ouvrez <strong>Inventaire</strong>, puis cliquez sur <strong>Ajouter un article</strong>. Renseignez son nom, sa quantité, son unité et son seuil d’alerte.</p></article><article className="info-card"><span className="info-label">ALERTES</span><h2>Repérer les stocks bas</h2><p>La page <strong>Alertes</strong> affiche les articles dont la quantité est inférieure ou égale au seuil défini.</p></article><article className="info-card"><span className="info-label">PARTAGE</span><h2>Voir les mêmes données</h2><p>Connectez-vous avec un compte autorisé pour consulter et modifier le même inventaire partagé.</p></article></section></>}
           <footer className="page-footer"><span><span className="footer-dot" /> Tout est à jour</span><span>Dernière synchronisation il y a quelques secondes</span></footer>
         </div>
       </main>
+      {mobileMenuOpen && <button className="mobile-nav-backdrop" aria-label="Fermer le menu" onClick={() => setMobileMenuOpen(false)} />}
 
       {isSupabaseConfigured && !userEmail && <div className="auth-overlay"><form className="auth-card" onSubmit={signIn}><div className="brand-mark auth-mark"><Boxes size={21} /></div><h2>{authMode === 'signin' ? 'Connectez-vous' : 'Créer votre accès'}</h2><p>Connectez-vous pour voir l’inventaire partagé de votre équipe.</p><label>Email<input type="email" required value={authEmail} onChange={e => setAuthEmail(e.target.value)} placeholder="vous@exemple.fr" /></label><label>Mot de passe<input type="password" minLength={8} required value={authPassword} onChange={e => setAuthPassword(e.target.value)} placeholder="8 caractères minimum" /></label>{authMessage && <div className="auth-message">{authMessage}</div>}<button className="button button-primary auth-submit" disabled={authBusy}>{authBusy ? 'Patientez…' : authMode === 'signin' ? 'Se connecter' : 'Créer un compte'}</button><button type="button" className="auth-toggle" onClick={() => { setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); setAuthMessage('') }}>{authMode === 'signin' ? 'Pas encore de compte ? Créer un accès' : 'Déjà inscrit·e ? Se connecter'}</button></form></div>}
 
