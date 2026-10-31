@@ -67,3 +67,12 @@ td{border-color:#f0e8df}
 .item-nourritures{background:#f4efe0;color:#887344}
 .item-friandise{background:#f7e8df;color:#a05b50}
 .item-consommable{background:#eee9e1;color:#7b6a55}
+.account-button{display:inline-flex;align-items:center;gap:8px;padding:8px 11px;border:1px solid #e8dccd;border-radius:8px;background:#fffdf9;color:#76523e;font-size:11px;font-weight:600}
+.account-button:hover{background:#fbf3e8;border-color:#dfcbb5}
+.account-button:focus-visible{outline:2px solid #b96d48;outline-offset:2px}
+.account-modal{width:min(100%,480px)}
+.account-modal form{display:grid;gap:13px}
+.account-modal .field{margin:0}
+.account-current{margin:0 0 2px;color:#83756a;font-size:11px}
+.account-current strong{color:#49382d}
+@media(max-width:720px){.account-button{padding:7px 9px}.account-button span{display:none}.top-actions{gap:10px}}

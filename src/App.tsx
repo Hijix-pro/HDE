@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Activity, ArrowDownUp, Bell, Boxes, Check, ChevronDown, CircleHelp, LayoutDashboard, LogOut, Menu, Package, Plus, Search, Settings2, ShieldCheck, SlidersHorizontal, X } from 'lucide-react'
+import { Activity, ArrowDownUp, Bell, Boxes, Check, ChevronDown, CircleHelp, LayoutDashboard, LogOut, Menu, Package, Plus, Search, Settings2, ShieldCheck, SlidersHorizontal, UserRound, X } from 'lucide-react'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import type { Item, ItemInput } from './types'
 
@@ -36,6 +36,11 @@ function App() {
   const [notice, setNotice] = useState('')
   const [activePage, setActivePage] = useState<Page>('overview')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [accountOpen, setAccountOpen] = useState(false)
+  const [newAccountEmail, setNewAccountEmail] = useState('')
+  const [newAccountPassword, setNewAccountPassword] = useState('')
+  const [accountMessage, setAccountMessage] = useState('')
+  const [accountBusy, setAccountBusy] = useState(false)
 
   useEffect(() => {
     if (!supabase) { setAuthReady(true); return }
@@ -83,6 +88,42 @@ function App() {
   }
 
   async function signOut() { await supabase?.auth.signOut(); setUserEmail(null) }
+  function openAccount() {
+    if (supabase && !userEmail) {
+      setAuthMessage('Connectez-vous pour gérer votre compte.')
+      return
+    }
+    setNewAccountEmail('')
+    setNewAccountPassword('')
+    setAccountMessage('')
+    setAccountOpen(true)
+  }
+  async function updateAccount(event: FormEvent) {
+    event.preventDefault()
+    if (!supabase || !userEmail) return
+    const attributes: { email?: string; password?: string } = {}
+    const email = newAccountEmail.trim()
+    if (email && email !== userEmail) attributes.email = email
+    if (newAccountPassword) attributes.password = newAccountPassword
+    if (!attributes.email && !attributes.password) {
+      setAccountMessage('Saisissez une nouvelle adresse email ou un nouveau mot de passe.')
+      return
+    }
+    setAccountBusy(true)
+    setAccountMessage('')
+    const { data, error } = await supabase.auth.updateUser(attributes)
+    setAccountBusy(false)
+    if (error) {
+      setAccountMessage(error.message)
+      return
+    }
+    if (data.user.email) setUserEmail(data.user.email)
+    setNewAccountEmail('')
+    setNewAccountPassword('')
+    setAccountMessage(attributes.email
+      ? 'Demande envoyée. Confirmez le changement depuis le message reçu par email.'
+      : 'Votre mot de passe a été mis à jour.')
+  }
   function navigate(page: Page) {
     setActivePage(page)
     setMobileMenuOpen(false)
@@ -147,7 +188,7 @@ function App() {
       </aside>
 
       <main className="main-content">
-        <header className="topbar"><div className="breadcrumbs"><span>HDE-Inventaire</span><span className="crumb-slash">/</span><strong>{pageLabels[activePage]}</strong></div><div className="top-actions"><span className="sync-status"><span className="status-dot" /> {supabase && userEmail ? 'Synchronisé' : 'Aperçu'}</span><button className="avatar-stack" title="Membres de l’espace"><span>CL</span><span>+2</span></button><button className="mobile-menu" aria-label="Ouvrir le menu" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(open => !open)}><Menu size={20} /></button></div></header>
+        <header className="topbar"><div className="breadcrumbs"><span>HDE-Inventaire</span><span className="crumb-slash">/</span><strong>{pageLabels[activePage]}</strong></div><div className="top-actions"><span className="sync-status"><span className="status-dot" /> {supabase && userEmail ? 'Synchronisé' : 'Aperçu'}</span><button className="account-button" onClick={openAccount}><UserRound size={17} /><span>Mon compte</span></button><button className="mobile-menu" aria-label="Ouvrir le menu" aria-expanded={mobileMenuOpen} onClick={() => setMobileMenuOpen(open => !open)}><Menu size={20} /></button></div></header>
         <div className="content-wrap">
           {!isSupabaseConfigured && <div className="setup-banner"><div><strong>Mode aperçu</strong><span>Ajoutez vos identifiants Supabase pour partager les données en ligne.</span></div><a href="./README.md">Voir les étapes <span>↗</span></a></div>}
           {notice && <div className="notice"><Check size={16} /><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Fermer"><X size={15} /></button></div>}
@@ -180,6 +221,8 @@ function App() {
         </div>
       </main>
       {mobileMenuOpen && <button className="mobile-nav-backdrop" aria-label="Fermer le menu" onClick={() => setMobileMenuOpen(false)} />}
+
+      {accountOpen && <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setAccountOpen(false) }}><section className="item-modal account-modal" role="dialog" aria-modal="true" aria-labelledby="account-title"><div className="modal-head"><div><span className="modal-kicker">HDE-INVENTAIRE</span><h2 id="account-title">Gérer mon compte</h2></div><button type="button" className="icon-button" onClick={() => setAccountOpen(false)} aria-label="Fermer"><X size={19} /></button></div>{userEmail && supabase ? <form onSubmit={updateAccount}><p className="account-current">Compte connecté : <strong>{userEmail}</strong></p><label className="field full">Nouvelle adresse email<input type="email" value={newAccountEmail} onChange={event => setNewAccountEmail(event.target.value)} placeholder="Laisser vide pour ne pas modifier" /></label><label className="field full">Nouveau mot de passe<input type="password" minLength={8} value={newAccountPassword} onChange={event => setNewAccountPassword(event.target.value)} placeholder="8 caractères minimum" /></label>{accountMessage && <div className="auth-message">{accountMessage}</div>}<div className="modal-actions"><button type="button" className="button button-outline" onClick={async () => { await signOut(); setAccountOpen(false) }}><LogOut size={16} /> Se déconnecter</button><button className="button button-primary" disabled={accountBusy}>{accountBusy ? 'Enregistrement…' : 'Enregistrer'}</button></div></form> : <><p>La gestion du compte est disponible après connexion à Supabase. En mode aperçu, les données restent temporaires.</p><div className="modal-actions"><button type="button" className="button button-outline" onClick={() => setAccountOpen(false)}>Fermer</button></div></>}</section></div>}
 
       {isSupabaseConfigured && !userEmail && <div className="auth-overlay"><form className="auth-card" onSubmit={signIn}><div className="brand-mark auth-mark"><Boxes size={21} /></div><h2>{authMode === 'signin' ? 'Connectez-vous' : 'Créer votre accès'}</h2><p>Connectez-vous pour voir l’inventaire partagé de votre équipe.</p><label>Email<input type="email" required value={authEmail} onChange={e => setAuthEmail(e.target.value)} placeholder="vous@exemple.fr" /></label><label>Mot de passe<input type="password" minLength={8} required value={authPassword} onChange={e => setAuthPassword(e.target.value)} placeholder="8 caractères minimum" /></label>{authMessage && <div className="auth-message">{authMessage}</div>}<button className="button button-primary auth-submit" disabled={authBusy}>{authBusy ? 'Patientez…' : authMode === 'signin' ? 'Se connecter' : 'Créer un compte'}</button><button type="button" className="auth-toggle" onClick={() => { setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); setAuthMessage('') }}>{authMode === 'signin' ? 'Pas encore de compte ? Créer un accès' : 'Déjà inscrit·e ? Se connecter'}</button></form></div>}
 
