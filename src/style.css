@@ -63,3 +63,7 @@ td{border-color:#f0e8df}
   .info-grid{grid-template-columns:1fr;gap:10px}
   .info-card{min-height:0;padding:16px}
 }
+.item-boisson,.item-alcool{background:#f9eadb;color:#9b5038}
+.item-nourritures{background:#f4efe0;color:#887344}
+.item-friandise{background:#f7e8df;color:#a05b50}
+.item-consommable{background:#eee9e1;color:#7b6a55}

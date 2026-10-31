@@ -19,6 +19,7 @@ MVP web pour suivre un inventaire commun : recherche, catégories, emplacements,
 
 1. Créez un compte sur [Supabase](https://supabase.com/) puis un nouveau projet. Choisissez une région proche de vos utilisateurs.
 2. Dans **SQL Editor**, collez le contenu de [`supabase/schema.sql`](supabase/schema.sql), puis exécutez-le. Cela crée la table et les règles RLS.
+   Si la base existe déjà, exécutez aussi [`supabase/update-inventory-categories.sql`](supabase/update-inventory-categories.sql) pour harmoniser les anciennes catégories.
 3. Pour retrouver les valeurs de connexion :
    - Cliquez sur **Connect** en haut du tableau de bord Supabase.
    - Gardez **Framework → Next.js** sélectionné.
