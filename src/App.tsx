@@ -15,7 +15,8 @@ const starterItems: Item[] = [
 const inventoryCategories = ['Boisson', 'Alcool', 'Nourritures', 'Friandise', 'Consommable']
 const blankItem: ItemInput = { name: '', category: 'Nourritures', quantity: 0, unit: 'unités', min_quantity: 0, location: '' }
 type Page = 'overview' | 'inventory' | 'alerts' | 'settings' | 'help' | 'admin'
-type AdminUser = { id: string; email: string; first_name: string; last_name: string; role: 'admin' | 'member'; created_at: string; last_sign_in_at: string | null }
+type AdminRole = 'member' | 'admin' | 'super_admin'
+type AdminUser = { id: string; email: string; first_name: string; last_name: string; role: AdminRole; created_at: string; last_sign_in_at: string | null }
 
 function App() {
   const [items, setItems] = useState<Item[]>(starterItems)
@@ -23,7 +24,7 @@ function App() {
   const [userId, setUserId] = useState<string | null>(null)
   const [userFirstName, setUserFirstName] = useState('')
   const [userLastName, setUserLastName] = useState('')
-  const [userRole, setUserRole] = useState<'admin' | 'member' | null>(null)
+  const [userRole, setUserRole] = useState<AdminRole | null>(null)
   const [authReady, setAuthReady] = useState(false)
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
   const [authFirstName, setAuthFirstName] = useState('')
@@ -87,7 +88,7 @@ function App() {
     let alive = true
     void supabase.from('profiles').select('first_name, last_name, role').eq('id', userId).maybeSingle().then(({ data }) => {
       if (!alive) return
-      setUserRole(data?.role === 'admin' ? 'admin' : 'member')
+      setUserRole(data?.role === 'super_admin' ? 'super_admin' : data?.role === 'admin' ? 'admin' : 'member')
       if (data?.first_name) setUserFirstName(data.first_name)
       if (data?.last_name) setUserLastName(data.last_name)
     })
@@ -95,7 +96,7 @@ function App() {
   }, [userId])
 
   useEffect(() => {
-    if (activePage !== 'admin' || userRole !== 'admin' || !supabase) return
+    if (activePage !== 'admin' || (userRole !== 'admin' && userRole !== 'super_admin') || !supabase) return
     let alive = true
     const loadUsers = async () => {
       setAdminLoading(true)
@@ -137,6 +138,7 @@ function App() {
   }), [items, search, category, showLowOnly])
   const lowItems = items.filter(item => item.quantity <= item.min_quantity)
   const totalUnits = items.reduce((sum, item) => sum + Number(item.quantity), 0)
+  const canManageInventory = !isSupabaseConfigured || userRole === 'admin' || userRole === 'super_admin'
 
   async function signIn(event: FormEvent) {
     event.preventDefault(); setAuthMessage(''); setAuthBusy(true)
@@ -241,11 +243,16 @@ function App() {
     setSearch('')
     setCategory('Toutes les catégories')
   }
-  function openNew() { setEditing(null); setForm(blankItem); setSaveError(''); setModalOpen(true) }
+  function openNew() {
+    if (!canManageInventory) { setNotice('Seuls les administrateurs peuvent modifier l’inventaire.'); return }
+    setEditing(null); setForm(blankItem); setSaveError(''); setModalOpen(true)
+  }
   function openEdit(item: Item) { setEditing(item); setForm({ name: item.name, category: item.category, quantity: item.quantity, unit: item.unit, min_quantity: item.min_quantity, location: item.location }); setSaveError(''); setModalOpen(true) }
 
   async function saveItem(event: FormEvent) {
-    event.preventDefault(); setSaveError(''); setSaving(true)
+    event.preventDefault()
+    if (!canManageInventory) { setSaveError('Seuls les administrateurs peuvent modifier l’inventaire.'); return }
+    setSaveError(''); setSaving(true)
     const input = { ...form, name: form.name.trim(), updated_at: new Date().toISOString() }
     if (supabase && userEmail) {
       const result = editing
@@ -264,6 +271,7 @@ function App() {
   }
 
   async function deleteItem(item: Item) {
+    if (!canManageInventory) { setNotice('Seuls les administrateurs peuvent modifier l’inventaire.'); return }
     if (!window.confirm(`Supprimer « ${item.name} » de l’inventaire ?`)) return
     if (supabase && userEmail) {
       const { error } = await supabase.from('inventory_items').delete().eq('id', item.id)
@@ -294,7 +302,7 @@ function App() {
           <button className={`nav-link ${activePage === 'overview' ? 'active' : ''}`} onClick={() => navigate('overview')} aria-current={activePage === 'overview' ? 'page' : undefined}><LayoutDashboard size={18} /> Vue d’ensemble</button>
           <button className={`nav-link ${activePage === 'inventory' ? 'active' : ''}`} onClick={() => navigate('inventory')} aria-current={activePage === 'inventory' ? 'page' : undefined}><Package size={18} /> Inventaire <span className="nav-count">{items.length}</span></button>
           <button className={`nav-link ${activePage === 'alerts' ? 'active' : ''}`} onClick={() => navigate('alerts')} aria-current={activePage === 'alerts' ? 'page' : undefined}><Bell size={18} /> Alertes{lowItems.length > 0 && <span className="alert-count">{lowItems.length}</span>}</button>
-          {userRole === 'admin' && <button className={`nav-link ${activePage === 'admin' ? 'active' : ''}`} onClick={() => navigate('admin')} aria-current={activePage === 'admin' ? 'page' : undefined}><ShieldCheck size={18} /> Administration</button>}
+          {(userRole === 'admin' || userRole === 'super_admin') && <button className={`nav-link ${activePage === 'admin' ? 'active' : ''}`} onClick={() => navigate('admin')} aria-current={activePage === 'admin' ? 'page' : undefined}><ShieldCheck size={18} /> Administration</button>}
         </nav>
         <div className="sidebar-bottom"><div className="tip-card"><div className="tip-icon"><ShieldCheck size={16} /></div><strong>Tout le monde à jour</strong><p>Les changements sont partagés instantanément avec votre équipe.</p></div><button className={`nav-link subtle ${activePage === 'settings' ? 'active' : ''}`} onClick={() => navigate('settings')} aria-current={activePage === 'settings' ? 'page' : undefined}><Settings2 size={18} /> Paramètres</button><button className={`nav-link subtle ${activePage === 'help' ? 'active' : ''}`} onClick={() => navigate('help')} aria-current={activePage === 'help' ? 'page' : undefined}><CircleHelp size={18} /> Aide & support</button></div>
         <div className="profile-row"><div className="profile-avatar">{userFirstName ? userFirstName[0].toUpperCase() : userEmail ? userEmail[0].toUpperCase() : 'CL'}</div><div className="profile-info"><strong>{userDisplayName}</strong><span>{userEmail ? 'Membre' : 'Administratrice'}</span></div>{userEmail && <button className="icon-button" onClick={signOut} aria-label="Se déconnecter" title="Se déconnecter"><LogOut size={17} /></button>}</div>
@@ -305,8 +313,9 @@ function App() {
         <div className="content-wrap">
           {!isSupabaseConfigured && <div className="setup-banner"><div><strong>Mode aperçu</strong><span>Ajoutez vos identifiants Supabase pour partager les données en ligne.</span></div><a href="./README.md">Voir les étapes <span>↗</span></a></div>}
           {notice && <div className="notice"><Check size={16} /><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Fermer"><X size={15} /></button></div>}
+          {userEmail && userRole === 'member' && <div className="setup-banner"><div><strong>Accès membre</strong><span>Vous pouvez consulter l’inventaire. Les modifications sont réservées aux administrateurs.</span></div></div>}
           {activePage === 'overview' && <>
-          <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> VOTRE ESPACE DE TRAVAIL</div><h1>Bonjour {userFirstName || (userEmail ? 'membre' : 'Camille')} <span className="wave">✦</span></h1><p>Voici ce qui se passe dans votre inventaire aujourd’hui.</p></div><button className="button button-primary" onClick={openNew}><Plus size={17} /> Ajouter un article</button></section>
+          <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> VOTRE ESPACE DE TRAVAIL</div><h1>Bonjour {userFirstName || (userEmail ? 'membre' : 'Camille')} <span className="wave">✦</span></h1><p>Voici ce qui se passe dans votre inventaire aujourd’hui.</p></div>{canManageInventory && <button className="button button-primary" onClick={openNew}><Plus size={17} /> Ajouter un article</button>}</section>
           <section className="stats-grid" aria-label="Résumé de l’inventaire">
             <article className="stat-card"><div className="stat-top"><span>Articles suivis</span><span className="stat-icon violet"><Package size={17} /></span></div><div className="stat-value">{items.length}<span className="stat-unit"> références</span></div><div className="stat-note"><span className="note-pill positive">+2</span><span>depuis la semaine dernière</span></div></article>
             <article className="stat-card"><div className="stat-top"><span>Unités en stock</span><span className="stat-icon green"><Boxes size={17} /></span></div><div className="stat-value">{totalUnits}<span className="stat-unit"> unités</span></div><div className="stat-note"><span className="note-muted">Toutes catégories confondues</span></div></article>
@@ -316,26 +325,26 @@ function App() {
           </>}
 
           {(activePage === 'overview' || activePage === 'inventory' || activePage === 'alerts') && <>
-          {activePage !== 'overview' && <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> HDE-INVENTAIRE</div><h1>{pageLabels[activePage]}</h1><p>{activePage === 'alerts' ? 'Articles dont la quantité a atteint le seuil de réapprovisionnement.' : 'Recherchez et gérez les articles de votre espace.'}</p></div>{activePage !== 'alerts' && <button className="button button-primary" onClick={openNew}><Plus size={17} /> Ajouter un article</button>}</section>}
+          {activePage !== 'overview' && <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> HDE-INVENTAIRE</div><h1>{pageLabels[activePage]}</h1><p>{activePage === 'alerts' ? 'Articles dont la quantité a atteint le seuil de réapprovisionnement.' : 'Recherchez et gérez les articles de votre espace.'}</p></div>{activePage !== 'alerts' && canManageInventory && <button className="button button-primary" onClick={openNew}><Plus size={17} /> Ajouter un article</button>}</section>}
           <section className="inventory-panel" id="inventaire">
             <div className="panel-heading"><div><h2>Inventaire</h2><p>Retrouvez et gérez tous les articles de votre espace.</p></div><button className="button button-outline" onClick={() => setNotice('Export CSV : cette fonction sera ajoutée dans une prochaine étape.')}><ArrowDownUp size={16} /> Exporter</button></div>
             <div className="toolbar"><label className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un article..." /></label><div className="toolbar-controls"><label className="select-wrap"><SlidersHorizontal size={15} /><select value={category} onChange={e => setCategory(e.target.value)}>{categories.map(value => <option key={value}>{value}</option>)}</select><ChevronDown size={14} /></label><button className={`filter-button ${showLowOnly ? 'selected' : ''}`} onClick={() => setShowLowOnly(!showLowOnly)}><Bell size={15} /> En alerte {lowItems.length > 0 && <span>{lowItems.length}</span>}</button></div></div>
             <div className="table-wrap"><table><thead><tr><th>ARTICLE</th><th>CATÉGORIE</th><th>QUANTITÉ</th><th>EMPLACEMENT</th><th>MISE À JOUR</th><th></th></tr></thead><tbody>
-              {filteredItems.map(item => <tr key={item.id}><td><div className="item-cell"><span className={`item-icon item-${item.category.toLowerCase().replace(/[^a-z]/g, '')}`}><Package size={17} /></span><strong>{item.name}</strong></div></td><td><span className="category-tag">{item.category}</span></td><td><div className="quantity-cell"><strong className={item.quantity <= item.min_quantity ? 'quantity-low' : ''}>{item.quantity}</strong><span>{item.unit}</span>{item.quantity <= item.min_quantity && <span className="low-badge">Bas</span>}</div></td><td><span className="location-cell"><span className="location-dot" />{item.location || '—'}</span></td><td><span className="date-cell">{userEmail ? 'À l’instant' : 'Aujourd’hui'}</span></td><td><div className="row-actions"><button onClick={() => openEdit(item)} aria-label={`Modifier ${item.name}`} title="Modifier"><Settings2 size={16} /></button><button onClick={() => void deleteItem(item)} aria-label={`Supprimer ${item.name}`} title="Supprimer"><X size={16} /></button></div></td></tr>)}
+              {filteredItems.map(item => <tr key={item.id}><td><div className="item-cell"><span className={`item-icon item-${item.category.toLowerCase().replace(/[^a-z]/g, '')}`}><Package size={17} /></span><strong>{item.name}</strong></div></td><td><span className="category-tag">{item.category}</span></td><td><div className="quantity-cell"><strong className={item.quantity <= item.min_quantity ? 'quantity-low' : ''}>{item.quantity}</strong><span>{item.unit}</span>{item.quantity <= item.min_quantity && <span className="low-badge">Bas</span>}</div></td><td><span className="location-cell"><span className="location-dot" />{item.location || '—'}</span></td><td><span className="date-cell">{userEmail ? 'À l’instant' : 'Aujourd’hui'}</span></td><td>{canManageInventory && <div className="row-actions"><button onClick={() => openEdit(item)} aria-label={`Modifier ${item.name}`} title="Modifier"><Settings2 size={16} /></button><button onClick={() => void deleteItem(item)} aria-label={`Supprimer ${item.name}`} title="Supprimer"><X size={16} /></button></div>}</td></tr>)}
               {filteredItems.length === 0 && <tr><td colSpan={6} className="empty-state">{activePage === 'alerts' ? 'Aucun article à réapprovisionner pour le moment.' : 'Aucun article ne correspond à votre recherche.'}</td></tr>}
             </tbody></table></div>
-            <div className="table-footer"><span>Affichage de <strong>{filteredItems.length}</strong> sur <strong>{items.length}</strong> articles</span><button className="button button-small" onClick={openNew}><Plus size={15} /> Nouvel article</button></div>
+            <div className="table-footer"><span>Affichage de <strong>{filteredItems.length}</strong> sur <strong>{items.length}</strong> articles</span>{canManageInventory && <button className="button button-small" onClick={openNew}><Plus size={15} /> Nouvel article</button>}</div>
           </section>
           </>}
           {activePage === 'settings' && <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> HDE-INVENTAIRE</div><h1>Paramètres</h1><p>Informations sur votre espace et votre connexion.</p></div></section>}
           {activePage === 'settings' && <section className="info-grid"><article className="info-card"><span className="info-label">ESPACE DE TRAVAIL</span><h2>Atelier du coin</h2><p>Inventaire partagé entre les membres de cet espace.</p></article><article className="info-card"><span className="info-label">COMPTE</span><h2>{userEmail ?? 'Mode aperçu'}</h2><p>{userEmail ? 'Vous êtes connecté à cet espace.' : 'Connectez-vous pour synchroniser les changements avec Supabase.'}</p>{userEmail && <button className="button button-outline" onClick={signOut}><LogOut size={16} /> Se déconnecter</button>}</article><article className="info-card"><span className="info-label">SYNCHRONISATION</span><h2>{supabase && userEmail ? 'Active' : 'Mode aperçu'}</h2><p>{supabase && userEmail ? 'Les changements d’inventaire sont enregistrés dans Supabase.' : 'Les changements ne sont pas encore partagés en ligne.'}</p></article></section>}
           {activePage === 'help' && <><section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> HDE-INVENTAIRE</div><h1>Aide & support</h1><p>Quelques repères pour gérer votre inventaire.</p></div></section><section className="info-grid help-grid"><article className="info-card"><span className="info-label">AJOUTER UN ARTICLE</span><h2>Suivre un nouveau produit</h2><p>Ouvrez <strong>Inventaire</strong>, puis cliquez sur <strong>Ajouter un article</strong>. Renseignez son nom, sa quantité, son unité et son seuil d’alerte.</p></article><article className="info-card"><span className="info-label">ALERTES</span><h2>Repérer les stocks bas</h2><p>La page <strong>Alertes</strong> affiche les articles dont la quantité est inférieure ou égale au seuil défini.</p></article><article className="info-card"><span className="info-label">PARTAGE</span><h2>Voir les mêmes données</h2><p>Connectez-vous avec un compte autorisé pour consulter et modifier le même inventaire partagé.</p></article></section></>}
-          {activePage === 'admin' && userRole === 'admin' && <>
-            <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> ESPACE ADMINISTRATEUR</div><h1>Gestion des comptes</h1><p>Invitez des membres et gérez leurs noms et leurs droits d’accès.</p></div></section>
+          {activePage === 'admin' && (userRole === 'admin' || userRole === 'super_admin') && <>
+            <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> {userRole === 'super_admin' ? 'ESPACE SUPER ADMIN' : 'ESPACE ADMINISTRATEUR'}</div><h1>{userRole === 'super_admin' ? 'Gestion complète' : 'Gestion du stock'}</h1><p>{userRole === 'super_admin' ? 'Invitez des membres et attribuez les rôles administrateur ou membre.' : 'Invitez des membres et gérez les articles de l’inventaire.'}</p></div></section>
             {adminNotice && <div className="notice"><Check size={16} /><span>{adminNotice}</span><button onClick={() => setAdminNotice('')} aria-label="Fermer"><X size={15} /></button></div>}
             {adminError && <div className="auth-message admin-error">{adminError}</div>}
             <section className="admin-panel"><div className="panel-heading"><div><h2>Inviter un membre</h2><p>Un lien de création de compte sera envoyé à son adresse email.</p></div></div><form className="admin-invite-form" onSubmit={inviteAdminMember}><label className="field">Prénom<input required value={inviteFirstName} onChange={event => setInviteFirstName(event.target.value)} /></label><label className="field">Nom de famille<input required value={inviteLastName} onChange={event => setInviteLastName(event.target.value)} /></label><label className="field">Email<input required type="email" value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} /></label><button className="button button-primary" disabled={inviteBusy}><Plus size={16} /> {inviteBusy ? 'Envoi…' : 'Envoyer une invitation'}</button></form></section>
-            <section className="admin-panel"><div className="panel-heading"><div><h2>Membres</h2><p>{adminUsers.length} compte{adminUsers.length === 1 ? '' : 's'} dans l’espace.</p></div></div>{adminLoading ? <p className="admin-empty">Chargement des comptes…</p> : adminUsers.length === 0 ? <p className="admin-empty">Aucun compte à afficher.</p> : <div className="admin-member-list">{adminUsers.map(member => <form className="admin-member-row" key={member.id} onSubmit={event => void saveAdminMember(event, member)}><div className="admin-member-email"><strong>{member.email}</strong><span>{member.id === userId ? 'Votre compte' : `Inscrit le ${new Date(member.created_at).toLocaleDateString('fr-FR')}`}</span></div><label className="field">Prénom<input required value={member.first_name} onChange={event => editAdminMember(member.id, 'first_name', event.target.value)} /></label><label className="field">Nom<input required value={member.last_name} onChange={event => editAdminMember(member.id, 'last_name', event.target.value)} /></label><label className="field">Rôle<select value={member.role} onChange={event => editAdminMember(member.id, 'role', event.target.value)}><option value="member">Membre</option><option value="admin">Administrateur</option></select></label><button className="button button-outline" disabled={savingAdminUserId === member.id}>{savingAdminUserId === member.id ? 'Enregistrement…' : 'Enregistrer'}</button></form>)}</div>}</section>
+            <section className="admin-panel"><div className="panel-heading"><div><h2>Membres</h2><p>{adminUsers.length} compte{adminUsers.length === 1 ? '' : 's'} dans l’espace.{userRole === 'admin' ? ' Les rôles sont gérés par le super admin.' : ''}</p></div></div>{adminLoading ? <p className="admin-empty">Chargement des comptes…</p> : adminUsers.length === 0 ? <p className="admin-empty">Aucun compte à afficher.</p> : <div className="admin-member-list">{adminUsers.map(member => userRole === 'super_admin' && member.role !== 'super_admin' ? <form className="admin-member-row" key={member.id} onSubmit={event => void saveAdminMember(event, member)}><div className="admin-member-email"><strong>{member.email}</strong><span>{member.id === userId ? 'Votre compte' : `Inscrit le ${new Date(member.created_at).toLocaleDateString('fr-FR')}`}</span></div><label className="field">Prénom<input required value={member.first_name} onChange={event => editAdminMember(member.id, 'first_name', event.target.value)} /></label><label className="field">Nom<input required value={member.last_name} onChange={event => editAdminMember(member.id, 'last_name', event.target.value)} /></label><label className="field">Rôle<select value={member.role} onChange={event => editAdminMember(member.id, 'role', event.target.value as AdminRole)}><option value="member">Membre</option><option value="admin">Administrateur</option></select></label><button className="button button-outline" disabled={savingAdminUserId === member.id}>{savingAdminUserId === member.id ? 'Enregistrement…' : 'Enregistrer'}</button></form> : <div className="admin-member-row admin-member-readonly" key={member.id}><div className="admin-member-email"><strong>{member.email}</strong><span>{member.id === userId ? 'Votre compte' : `Inscrit le ${new Date(member.created_at).toLocaleDateString('fr-FR')}`}</span></div><div className="admin-member-name"><span>Prénom</span><strong>{member.first_name || '—'}</strong></div><div className="admin-member-name"><span>Nom</span><strong>{member.last_name || '—'}</strong></div><div className="admin-member-role">{member.role === 'super_admin' ? 'Super admin' : member.role === 'admin' ? 'Administrateur' : 'Membre'}</div></div>)}</div>}</section>
           </>}
           <footer className="page-footer"><span><span className="footer-dot" /> Tout est à jour</span><span>Dernière synchronisation il y a quelques secondes</span></footer>
         </div>

@@ -3,13 +3,16 @@ create table if not exists public.profiles (
   id uuid primary key references auth.users(id) on delete cascade,
   first_name text not null default '',
   last_name text not null default '',
-  role text not null default 'member' check (role in ('admin', 'member')),
+  role text not null default 'member' check (role in ('member', 'admin', 'super_admin')),
   created_at timestamptz not null default now()
 );
 
 alter table public.profiles enable row level security;
 revoke all on public.profiles from anon, authenticated;
 grant select on public.profiles to authenticated;
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check
+  check (role in ('member', 'admin', 'super_admin'));
 
 create or replace function public.is_inventory_admin()
 returns boolean
@@ -22,12 +25,31 @@ as $$
     select 1
     from public.profiles
     where id = (select auth.uid())
-      and role = 'admin'
+      and role in ('admin', 'super_admin')
   );
 $$;
 
 revoke all on function public.is_inventory_admin() from public;
 grant execute on function public.is_inventory_admin() to authenticated;
+
+drop policy if exists "Authenticated users can add inventory items" on public.inventory_items;
+drop policy if exists "Admins can add inventory items" on public.inventory_items;
+create policy "Admins can add inventory items"
+on public.inventory_items for insert to authenticated
+with check ((select public.is_inventory_admin()));
+
+drop policy if exists "Authenticated users can update inventory items" on public.inventory_items;
+drop policy if exists "Admins can update inventory items" on public.inventory_items;
+create policy "Admins can update inventory items"
+on public.inventory_items for update to authenticated
+using ((select public.is_inventory_admin()))
+with check ((select public.is_inventory_admin()));
+
+drop policy if exists "Authenticated users can delete inventory items" on public.inventory_items;
+drop policy if exists "Admins can delete inventory items" on public.inventory_items;
+create policy "Admins can delete inventory items"
+on public.inventory_items for delete to authenticated
+using ((select public.is_inventory_admin()));
 
 drop policy if exists "Users can view own profile or admins can view all" on public.profiles;
 create policy "Users can view own profile or admins can view all"

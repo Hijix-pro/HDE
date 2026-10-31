@@ -20,21 +20,22 @@ MVP web pour suivre un inventaire commun : recherche, catégories, emplacements,
 1. Créez un compte sur [Supabase](https://supabase.com/) puis un nouveau projet. Choisissez une région proche de vos utilisateurs.
 2. Dans **SQL Editor**, collez le contenu de [`supabase/schema.sql`](supabase/schema.sql), puis exécutez-le. Cela crée la table et les règles RLS.
    Si la base existe déjà, exécutez aussi [`supabase/update-inventory-categories.sql`](supabase/update-inventory-categories.sql) pour harmoniser les anciennes catégories.
-3. Pour activer l'administration des comptes, exécutez [`supabase/admin-users.sql`](supabase/admin-users.sql). Après création de votre compte, remplacez `VOTRE_EMAIL_ICI` dans [`supabase/make-first-admin.sql`](supabase/make-first-admin.sql) par votre email, puis exécutez ce script pour attribuer le premier rôle administrateur.
-4. Pour retrouver les valeurs de connexion :
+3. Pour activer les profils, rôles et droits d’accès, exécutez [`supabase/admin-users.sql`](supabase/admin-users.sql) après le schéma d’inventaire. Les membres peuvent consulter; les admins peuvent inviter des membres et gérer le stock; le super admin peut aussi promouvoir des membres en admin ou les rétrograder.
+4. Après création de votre compte, remplacez `VOTRE_EMAIL_ICI` dans [`supabase/make-first-admin.sql`](supabase/make-first-admin.sql) par votre email, puis exécutez ce script pour attribuer le premier rôle **super admin**.
+5. Pour retrouver les valeurs de connexion :
    - Cliquez sur **Connect** en haut du tableau de bord Supabase.
    - Gardez **Framework → Next.js** sélectionné.
    - Dans le bloc `.env.local`, repérez `NEXT_PUBLIC_SUPABASE_URL=` et copiez la valeur qui suit. C’est l’URL du projet, de la forme `https://…supabase.co`.
    - Pour la clé, ouvrez **Project Settings → API Keys** et copiez la **Publishable key** (`sb_publishable_…`). Vous pouvez aussi copier la valeur `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` affichée dans **Connect**.
-5. Dans `.env.local`, remplacez les exemples :
+6. Dans `.env.local`, remplacez les exemples :
 
    ```env
    NEXT_PUBLIC_SUPABASE_URL=https://....supabase.co
    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=sb_publishable_...
    ```
 
-6. Enregistrez `.env.local`, arrêtez le serveur local s’il tourne déjà avec `Ctrl+C`, puis relancez `npm run dev`. Ouvrez `http://localhost:3000`, créez un compte depuis l’écran de connexion, puis connectez-vous. Selon le réglage Supabase, il faudra confirmer l’adresse email.
-7. Pour tester le partage, créez un deuxième compte dans un autre navigateur. Les deux comptes voient le même inventaire; les changements se synchronisent par Realtime.
+7. Enregistrez `.env.local`, arrêtez le serveur local s’il tourne déjà avec `Ctrl+C`, puis relancez `npm run dev`. Ouvrez `http://localhost:3000`, créez un compte depuis l’écran de connexion, puis connectez-vous. Selon le réglage Supabase, il faudra confirmer l’adresse email.
+8. Pour tester le partage, créez un deuxième compte dans un autre navigateur. Les deux comptes voient le même inventaire; les changements se synchronisent par Realtime.
 
 ### Accès et clés
 

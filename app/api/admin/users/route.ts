@@ -2,7 +2,7 @@ import { createClient, type SupabaseClient, type User } from '@supabase/supabase
 import { NextResponse } from 'next/server'
 
 type AdminGate =
-  | { ok: true; client: SupabaseClient; user: User }
+  | { ok: true; client: SupabaseClient; user: User; role: 'admin' | 'super_admin' }
   | { ok: false; response: NextResponse }
 
 async function requireAdmin(request: Request): Promise<AdminGate> {
@@ -30,10 +30,10 @@ async function requireAdmin(request: Request): Promise<AdminGate> {
   if (profileError) {
     return { ok: false, response: NextResponse.json({ error: 'Impossible de vérifier les droits administrateur.' }, { status: 500 }) }
   }
-  if (profile?.role !== 'admin') {
+  if (profile?.role !== 'admin' && profile?.role !== 'super_admin') {
     return { ok: false, response: NextResponse.json({ error: 'Accès réservé aux administrateurs.' }, { status: 403 }) }
   }
-  return { ok: true, client, user }
+  return { ok: true, client, user, role: profile.role }
 }
 
 function metadataName(value: unknown) {
@@ -109,21 +109,14 @@ export async function PATCH(request: Request) {
   if (!id || !firstName || !lastName || (role !== 'admin' && role !== 'member')) {
     return NextResponse.json({ error: 'Informations de membre incomplètes.' }, { status: 400 })
   }
-  if (id === gate.user.id && role !== 'admin') {
-    return NextResponse.json({ error: 'Vous ne pouvez pas retirer votre propre accès administrateur.' }, { status: 400 })
+  if (gate.role !== 'super_admin') {
+    return NextResponse.json({ error: 'Seul le super admin peut modifier les comptes et leurs rôles.' }, { status: 403 })
   }
-  if (role === 'member') {
-    const { count, error: countError } = await gate.client
-      .from('profiles')
-      .select('id', { count: 'exact', head: true })
-      .eq('role', 'admin')
-    if (countError) return NextResponse.json({ error: countError.message }, { status: 500 })
-    if ((count ?? 0) <= 1) {
-      const { data: target } = await gate.client.from('profiles').select('role').eq('id', id).maybeSingle()
-      if (target?.role === 'admin') {
-        return NextResponse.json({ error: 'Il doit rester au moins un administrateur.' }, { status: 400 })
-      }
-    }
+  const { data: target, error: targetError } = await gate.client.from('profiles').select('role').eq('id', id).maybeSingle()
+  if (targetError) return NextResponse.json({ error: targetError.message }, { status: 500 })
+  if (!target) return NextResponse.json({ error: 'Compte introuvable.' }, { status: 404 })
+  if (target.role === 'super_admin') {
+    return NextResponse.json({ error: 'Le compte super admin est protégé.' }, { status: 400 })
   }
 
   const { error: metadataError } = await gate.client.auth.admin.updateUserById(id, {
