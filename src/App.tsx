@@ -19,8 +19,12 @@ type Page = 'overview' | 'inventory' | 'alerts' | 'settings' | 'help'
 function App() {
   const [items, setItems] = useState<Item[]>(starterItems)
   const [userEmail, setUserEmail] = useState<string | null>(null)
+  const [userFirstName, setUserFirstName] = useState('')
+  const [userLastName, setUserLastName] = useState('')
   const [authReady, setAuthReady] = useState(false)
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
+  const [authFirstName, setAuthFirstName] = useState('')
+  const [authLastName, setAuthLastName] = useState('')
   const [authEmail, setAuthEmail] = useState('')
   const [authPassword, setAuthPassword] = useState('')
   const [authMessage, setAuthMessage] = useState('')
@@ -37,6 +41,8 @@ function App() {
   const [activePage, setActivePage] = useState<Page>('overview')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [accountOpen, setAccountOpen] = useState(false)
+  const [accountFirstName, setAccountFirstName] = useState('')
+  const [accountLastName, setAccountLastName] = useState('')
   const [newAccountEmail, setNewAccountEmail] = useState('')
   const [newAccountPassword, setNewAccountPassword] = useState('')
   const [accountMessage, setAccountMessage] = useState('')
@@ -46,10 +52,14 @@ function App() {
     if (!supabase) { setAuthReady(true); return }
     void supabase.auth.getSession().then(({ data }) => {
       setUserEmail(data.session?.user.email ?? null)
+      setUserFirstName(String(data.session?.user.user_metadata?.first_name ?? ''))
+      setUserLastName(String(data.session?.user.user_metadata?.last_name ?? ''))
       setAuthReady(true)
     })
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUserEmail(session?.user.email ?? null)
+      setUserFirstName(String(session?.user.user_metadata?.first_name ?? ''))
+      setUserLastName(String(session?.user.user_metadata?.last_name ?? ''))
     })
     return () => listener.subscription.unsubscribe()
   }, [])
@@ -79,7 +89,7 @@ function App() {
   async function signIn(event: FormEvent) {
     event.preventDefault(); setAuthMessage(''); setAuthBusy(true)
     const result = authMode === 'signup'
-      ? await supabase!.auth.signUp({ email: authEmail, password: authPassword })
+      ? await supabase!.auth.signUp({ email: authEmail, password: authPassword, options: { data: { first_name: authFirstName.trim(), last_name: authLastName.trim() } } })
       : await supabase!.auth.signInWithPassword({ email: authEmail, password: authPassword })
     setAuthBusy(false)
     if (result.error) setAuthMessage(result.error.message)
@@ -87,12 +97,14 @@ function App() {
     else setAuthMessage('Connexion réussie.')
   }
 
-  async function signOut() { await supabase?.auth.signOut(); setUserEmail(null) }
+  async function signOut() { await supabase?.auth.signOut(); setUserEmail(null); setUserFirstName(''); setUserLastName('') }
   function openAccount() {
     if (supabase && !userEmail) {
       setAuthMessage('Connectez-vous pour gérer votre compte.')
       return
     }
+    setAccountFirstName(userFirstName)
+    setAccountLastName(userLastName)
     setNewAccountEmail('')
     setNewAccountPassword('')
     setAccountMessage('')
@@ -101,12 +113,16 @@ function App() {
   async function updateAccount(event: FormEvent) {
     event.preventDefault()
     if (!supabase || !userEmail) return
-    const attributes: { email?: string; password?: string } = {}
+    const attributes: { email?: string; password?: string; data?: Record<string, string> } = {}
     const email = newAccountEmail.trim()
+    const firstName = accountFirstName.trim()
+    const lastName = accountLastName.trim()
+    const profileChanged = firstName !== userFirstName || lastName !== userLastName
     if (email && email !== userEmail) attributes.email = email
     if (newAccountPassword) attributes.password = newAccountPassword
-    if (!attributes.email && !attributes.password) {
-      setAccountMessage('Saisissez une nouvelle adresse email ou un nouveau mot de passe.')
+    if (profileChanged) attributes.data = { first_name: firstName, last_name: lastName }
+    if (!attributes.email && !attributes.password && !attributes.data) {
+      setAccountMessage('Modifiez au moins un champ avant d’enregistrer.')
       return
     }
     setAccountBusy(true)
@@ -118,11 +134,16 @@ function App() {
       return
     }
     if (data.user.email) setUserEmail(data.user.email)
+    if (attributes.data) {
+      setUserFirstName(firstName)
+      setUserLastName(lastName)
+    }
     setNewAccountEmail('')
     setNewAccountPassword('')
-    setAccountMessage(attributes.email
-      ? 'Demande envoyée. Confirmez le changement depuis le message reçu par email.'
-      : 'Votre mot de passe a été mis à jour.')
+    if (attributes.email) setAccountMessage('Demande envoyée. Confirmez le changement depuis le message reçu par email.')
+    else if (attributes.password && attributes.data) setAccountMessage('Votre prénom, votre nom et votre mot de passe ont été mis à jour.')
+    else if (attributes.data) setAccountMessage('Votre prénom et votre nom ont été mis à jour.')
+    else setAccountMessage('Votre mot de passe a été mis à jour.')
   }
   function navigate(page: Page) {
     setActivePage(page)
@@ -169,6 +190,7 @@ function App() {
     settings: 'Paramètres',
     help: 'Aide & support',
   }
+  const userDisplayName = [userFirstName, userLastName].filter(Boolean).join(' ') || userEmail || 'Camille Laurent'
 
   if (!authReady) return <div className="loading-screen"><div className="brand-mark"><Boxes size={21} /></div><span>Ouverture de votre espace…</span></div>
 
@@ -184,7 +206,7 @@ function App() {
           <button className={`nav-link ${activePage === 'alerts' ? 'active' : ''}`} onClick={() => navigate('alerts')} aria-current={activePage === 'alerts' ? 'page' : undefined}><Bell size={18} /> Alertes{lowItems.length > 0 && <span className="alert-count">{lowItems.length}</span>}</button>
         </nav>
         <div className="sidebar-bottom"><div className="tip-card"><div className="tip-icon"><ShieldCheck size={16} /></div><strong>Tout le monde à jour</strong><p>Les changements sont partagés instantanément avec votre équipe.</p></div><button className={`nav-link subtle ${activePage === 'settings' ? 'active' : ''}`} onClick={() => navigate('settings')} aria-current={activePage === 'settings' ? 'page' : undefined}><Settings2 size={18} /> Paramètres</button><button className={`nav-link subtle ${activePage === 'help' ? 'active' : ''}`} onClick={() => navigate('help')} aria-current={activePage === 'help' ? 'page' : undefined}><CircleHelp size={18} /> Aide & support</button></div>
-        <div className="profile-row"><div className="profile-avatar">{userEmail ? userEmail[0].toUpperCase() : 'CL'}</div><div className="profile-info"><strong>{userEmail ?? 'Camille Laurent'}</strong><span>{userEmail ? 'Membre' : 'Administratrice'}</span></div>{userEmail && <button className="icon-button" onClick={signOut} aria-label="Se déconnecter" title="Se déconnecter"><LogOut size={17} /></button>}</div>
+        <div className="profile-row"><div className="profile-avatar">{userFirstName ? userFirstName[0].toUpperCase() : userEmail ? userEmail[0].toUpperCase() : 'CL'}</div><div className="profile-info"><strong>{userDisplayName}</strong><span>{userEmail ? 'Membre' : 'Administratrice'}</span></div>{userEmail && <button className="icon-button" onClick={signOut} aria-label="Se déconnecter" title="Se déconnecter"><LogOut size={17} /></button>}</div>
       </aside>
 
       <main className="main-content">
@@ -193,7 +215,7 @@ function App() {
           {!isSupabaseConfigured && <div className="setup-banner"><div><strong>Mode aperçu</strong><span>Ajoutez vos identifiants Supabase pour partager les données en ligne.</span></div><a href="./README.md">Voir les étapes <span>↗</span></a></div>}
           {notice && <div className="notice"><Check size={16} /><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Fermer"><X size={15} /></button></div>}
           {activePage === 'overview' && <>
-          <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> VOTRE ESPACE DE TRAVAIL</div><h1>Bonjour Camille <span className="wave">✦</span></h1><p>Voici ce qui se passe dans votre inventaire aujourd’hui.</p></div><button className="button button-primary" onClick={openNew}><Plus size={17} /> Ajouter un article</button></section>
+          <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> VOTRE ESPACE DE TRAVAIL</div><h1>Bonjour {userFirstName || (userEmail ? 'membre' : 'Camille')} <span className="wave">✦</span></h1><p>Voici ce qui se passe dans votre inventaire aujourd’hui.</p></div><button className="button button-primary" onClick={openNew}><Plus size={17} /> Ajouter un article</button></section>
           <section className="stats-grid" aria-label="Résumé de l’inventaire">
             <article className="stat-card"><div className="stat-top"><span>Articles suivis</span><span className="stat-icon violet"><Package size={17} /></span></div><div className="stat-value">{items.length}<span className="stat-unit"> références</span></div><div className="stat-note"><span className="note-pill positive">+2</span><span>depuis la semaine dernière</span></div></article>
             <article className="stat-card"><div className="stat-top"><span>Unités en stock</span><span className="stat-icon green"><Boxes size={17} /></span></div><div className="stat-value">{totalUnits}<span className="stat-unit"> unités</span></div><div className="stat-note"><span className="note-muted">Toutes catégories confondues</span></div></article>
@@ -222,9 +244,9 @@ function App() {
       </main>
       {mobileMenuOpen && <button className="mobile-nav-backdrop" aria-label="Fermer le menu" onClick={() => setMobileMenuOpen(false)} />}
 
-      {accountOpen && <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setAccountOpen(false) }}><section className="item-modal account-modal" role="dialog" aria-modal="true" aria-labelledby="account-title"><div className="modal-head"><div><span className="modal-kicker">HDE-INVENTAIRE</span><h2 id="account-title">Gérer mon compte</h2></div><button type="button" className="icon-button" onClick={() => setAccountOpen(false)} aria-label="Fermer"><X size={19} /></button></div>{userEmail && supabase ? <form onSubmit={updateAccount}><p className="account-current">Compte connecté : <strong>{userEmail}</strong></p><label className="field full">Nouvelle adresse email<input type="email" value={newAccountEmail} onChange={event => setNewAccountEmail(event.target.value)} placeholder="Laisser vide pour ne pas modifier" /></label><label className="field full">Nouveau mot de passe<input type="password" minLength={8} value={newAccountPassword} onChange={event => setNewAccountPassword(event.target.value)} placeholder="8 caractères minimum" /></label>{accountMessage && <div className="auth-message">{accountMessage}</div>}<div className="modal-actions"><button type="button" className="button button-outline" onClick={async () => { await signOut(); setAccountOpen(false) }}><LogOut size={16} /> Se déconnecter</button><button className="button button-primary" disabled={accountBusy}>{accountBusy ? 'Enregistrement…' : 'Enregistrer'}</button></div></form> : <><p>La gestion du compte est disponible après connexion à Supabase. En mode aperçu, les données restent temporaires.</p><div className="modal-actions"><button type="button" className="button button-outline" onClick={() => setAccountOpen(false)}>Fermer</button></div></>}</section></div>}
+      {accountOpen && <div className="modal-backdrop" onMouseDown={event => { if (event.target === event.currentTarget) setAccountOpen(false) }}><section className="item-modal account-modal" role="dialog" aria-modal="true" aria-labelledby="account-title"><div className="modal-head"><div><span className="modal-kicker">HDE-INVENTAIRE</span><h2 id="account-title">Gérer mon compte</h2></div><button type="button" className="icon-button" onClick={() => setAccountOpen(false)} aria-label="Fermer"><X size={19} /></button></div>{userEmail && supabase ? <form onSubmit={updateAccount}><p className="account-current">Compte connecté : <strong>{userEmail}</strong></p><label className="field full">Prénom<input required value={accountFirstName} onChange={event => setAccountFirstName(event.target.value)} /></label><label className="field full">Nom de famille<input required value={accountLastName} onChange={event => setAccountLastName(event.target.value)} /></label><label className="field full">Nouvelle adresse email<input type="email" value={newAccountEmail} onChange={event => setNewAccountEmail(event.target.value)} placeholder="Laisser vide pour ne pas modifier" /></label><label className="field full">Nouveau mot de passe<input type="password" minLength={8} value={newAccountPassword} onChange={event => setNewAccountPassword(event.target.value)} placeholder="8 caractères minimum" /></label>{accountMessage && <div className="auth-message">{accountMessage}</div>}<div className="modal-actions"><button type="button" className="button button-outline" onClick={async () => { await signOut(); setAccountOpen(false) }}><LogOut size={16} /> Se déconnecter</button><button className="button button-primary" disabled={accountBusy}>{accountBusy ? 'Enregistrement…' : 'Enregistrer'}</button></div></form> : <><p>La gestion du compte est disponible après connexion à Supabase. En mode aperçu, les données restent temporaires.</p><div className="modal-actions"><button type="button" className="button button-outline" onClick={() => setAccountOpen(false)}>Fermer</button></div></>}</section></div>}
 
-      {isSupabaseConfigured && !userEmail && <div className="auth-overlay"><form className="auth-card" onSubmit={signIn}><div className="brand-mark auth-mark"><Boxes size={21} /></div><h2>{authMode === 'signin' ? 'Connectez-vous' : 'Créer votre accès'}</h2><p>Connectez-vous pour voir l’inventaire partagé de votre équipe.</p><label>Email<input type="email" required value={authEmail} onChange={e => setAuthEmail(e.target.value)} placeholder="vous@exemple.fr" /></label><label>Mot de passe<input type="password" minLength={8} required value={authPassword} onChange={e => setAuthPassword(e.target.value)} placeholder="8 caractères minimum" /></label>{authMessage && <div className="auth-message">{authMessage}</div>}<button className="button button-primary auth-submit" disabled={authBusy}>{authBusy ? 'Patientez…' : authMode === 'signin' ? 'Se connecter' : 'Créer un compte'}</button><button type="button" className="auth-toggle" onClick={() => { setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); setAuthMessage('') }}>{authMode === 'signin' ? 'Pas encore de compte ? Créer un accès' : 'Déjà inscrit·e ? Se connecter'}</button></form></div>}
+      {isSupabaseConfigured && !userEmail && <div className="auth-overlay"><form className="auth-card" onSubmit={signIn}><div className="brand-mark auth-mark"><Boxes size={21} /></div><h2>{authMode === 'signin' ? 'Connectez-vous' : 'Créer votre accès'}</h2><p>Connectez-vous pour voir l’inventaire partagé de votre équipe.</p>{authMode === 'signup' && <><label>Prénom<input type="text" required value={authFirstName} onChange={event => setAuthFirstName(event.target.value)} placeholder="Votre prénom" /></label><label>Nom de famille<input type="text" required value={authLastName} onChange={event => setAuthLastName(event.target.value)} placeholder="Votre nom" /></label></>}<label>Email<input type="email" required value={authEmail} onChange={e => setAuthEmail(e.target.value)} placeholder="vous@exemple.fr" /></label><label>Mot de passe<input type="password" minLength={8} required value={authPassword} onChange={e => setAuthPassword(e.target.value)} placeholder="8 caractères minimum" /></label>{authMessage && <div className="auth-message">{authMessage}</div>}<button className="button button-primary auth-submit" disabled={authBusy}>{authBusy ? 'Patientez…' : authMode === 'signin' ? 'Se connecter' : 'Créer un compte'}</button><button type="button" className="auth-toggle" onClick={() => { setAuthMode(authMode === 'signin' ? 'signup' : 'signin'); setAuthMessage('') }}>{authMode === 'signin' ? 'Pas encore de compte ? Créer un accès' : 'Déjà inscrit·e ? Se connecter'}</button></form></div>}
 
           {modalOpen && <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setModalOpen(false) }}><form className="item-modal" onSubmit={saveItem}><div className="modal-head"><div><span className="modal-kicker">INVENTAIRE</span><h2>{editing ? 'Modifier un article' : 'Ajouter un article'}</h2></div><button type="button" className="icon-button" onClick={() => setModalOpen(false)} aria-label="Fermer"><X size={19} /></button></div><label className="field full">Nom de l’article<input autoFocus required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Ex. Café en grains" /></label><div className="form-grid"><label className="field">Catégorie<select value={form.category} onChange={e => setForm({ ...form, category: e.target.value })}>{inventoryCategories.map(value => <option key={value} value={value}>{value}</option>)}</select></label><label className="field">Emplacement<input value={form.location} onChange={e => setForm({ ...form, location: e.target.value })} placeholder="Ex. Réserve A" /></label><label className="field">Quantité actuelle<input type="number" min="0" required value={form.quantity} onChange={e => setForm({ ...form, quantity: Number(e.target.value) })} /></label><label className="field">Unité<input required value={form.unit} onChange={e => setForm({ ...form, unit: e.target.value })} placeholder="unités, cartons…" /></label><label className="field full">Seuil d’alerte<input type="number" min="0" required value={form.min_quantity} onChange={e => setForm({ ...form, min_quantity: Number(e.target.value) })} /><span className="field-hint">Vous serez alerté lorsque le stock atteint ce niveau.</span></label></div>{saveError && <div className="auth-message">{saveError}</div>}<div className="modal-actions"><button type="button" className="button button-outline" onClick={() => setModalOpen(false)}>Annuler</button><button className="button button-primary" disabled={saving}>{saving ? 'Enregistrement…' : editing ? 'Enregistrer' : <><Plus size={16} /> Ajouter l’article</>}</button></div></form></div>}
     </div>
