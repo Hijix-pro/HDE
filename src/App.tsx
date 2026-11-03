@@ -251,6 +251,34 @@ function App() {
   function editAdminMember(id: string, field: 'first_name' | 'last_name' | 'role', value: string) {
     setAdminUsers(current => current.map(user => user.id === id ? { ...user, [field]: value } as AdminUser : user))
   }
+  function exportInventory() {
+    const columns = ['Article', 'Catégorie', 'Quantité', 'Unité', 'Seuil d’alerte', 'Emplacement', 'Mis à jour']
+    const escapeCell = (value: string | number) => {
+      let text = String(value ?? '')
+      if (typeof value === 'string' && /^[\t\r ]*[=+@-]/.test(text)) text = `'${text}`
+      return `"${text.replaceAll('"', '""')}"`
+    }
+    const rows = filteredItems.map(item => [
+      item.name,
+      item.category,
+      item.quantity,
+      item.unit,
+      item.min_quantity,
+      item.location,
+      item.updated_at ? new Date(item.updated_at).toISOString() : '',
+    ])
+    const csv = [columns, ...rows].map(row => row.map(escapeCell).join(';')).join('\r\n')
+    const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `HDE-Inventaire-${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+    setNotice(`${filteredItems.length} article${filteredItems.length === 1 ? '' : 's'} exporté${filteredItems.length === 1 ? '' : 's'} en CSV.`)
+  }
   function navigate(page: Page) {
     setActivePage(page)
     setMobileMenuOpen(false)
@@ -342,7 +370,7 @@ function App() {
           {(activePage === 'overview' || activePage === 'inventory' || activePage === 'alerts') && <>
           {activePage !== 'overview' && <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> HDE-INVENTAIRE</div><h1>{pageLabels[activePage]}</h1><p>{activePage === 'alerts' ? 'Articles dont la quantité a atteint le seuil de réapprovisionnement.' : 'Recherchez et gérez les articles de votre espace.'}</p></div>{activePage !== 'alerts' && canManageInventory && <button className="button button-primary" onClick={openNew}><Plus size={17} /> Ajouter un article</button>}</section>}
           <section className="inventory-panel" id="inventaire">
-            <div className="panel-heading"><div><h2>Inventaire</h2><p>Retrouvez et gérez tous les articles de votre espace.</p></div><button className="button button-outline" onClick={() => setNotice('Export CSV : cette fonction sera ajoutée dans une prochaine étape.')}><ArrowDownUp size={16} /> Exporter</button></div>
+            <div className="panel-heading"><div><h2>Inventaire</h2><p>Retrouvez et gérez tous les articles de votre espace.</p></div><button className="button button-outline" onClick={exportInventory}><ArrowDownUp size={16} /> Exporter</button></div>
             <div className="toolbar"><label className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un article..." /></label><div className="toolbar-controls"><label className="select-wrap"><SlidersHorizontal size={15} /><select value={category} onChange={e => setCategory(e.target.value)}>{categories.map(value => <option key={value}>{value}</option>)}</select><ChevronDown size={14} /></label><button className={`filter-button ${showLowOnly ? 'selected' : ''}`} onClick={() => setShowLowOnly(!showLowOnly)}><Bell size={15} /> En alerte {lowItems.length > 0 && <span>{lowItems.length}</span>}</button></div></div>
             <div className="table-wrap"><table><thead><tr><th>ARTICLE</th><th>CATÉGORIE</th><th>QUANTITÉ</th><th>EMPLACEMENT</th><th>MISE À JOUR</th><th></th></tr></thead><tbody>
               {filteredItems.map(item => <tr key={item.id}><td><div className="item-cell"><span className={`item-icon item-${item.category.toLowerCase().replace(/[^a-z]/g, '')}`}><Package size={17} /></span><strong>{item.name}</strong></div></td><td><span className="category-tag">{item.category}</span></td><td><div className="quantity-cell"><strong className={item.quantity <= item.min_quantity ? 'quantity-low' : ''}>{item.quantity}</strong><span>{item.unit}</span>{item.quantity <= item.min_quantity && <span className="low-badge">Bas</span>}</div></td><td><span className="location-cell"><span className="location-dot" />{item.location || '—'}</span></td><td><span className="date-cell">{userEmail ? 'À l’instant' : 'Aujourd’hui'}</span></td><td>{canManageInventory && <div className="row-actions"><button onClick={() => openEdit(item)} aria-label={`Modifier ${item.name}`} title="Modifier"><Settings2 size={16} /></button><button onClick={() => void deleteItem(item)} aria-label={`Supprimer ${item.name}`} title="Supprimer"><X size={16} /></button></div>}</td></tr>)}
