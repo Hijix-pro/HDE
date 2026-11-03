@@ -18,6 +18,28 @@ type Page = 'overview' | 'inventory' | 'alerts' | 'settings' | 'help' | 'admin'
 type AdminRole = 'member' | 'admin' | 'super_admin'
 type AdminUser = { id: string; email: string; first_name: string; last_name: string; role: AdminRole; created_at: string; last_sign_in_at: string | null }
 
+function timeSince(value: string) {
+  const elapsed = Math.max(0, (Date.now() - new Date(value).getTime()) / 1000)
+  if (!Number.isFinite(elapsed)) return 'Date indisponible'
+  const units: [number, Intl.RelativeTimeFormatUnit][] = [
+    [60, 'second'],
+    [60, 'minute'],
+    [24, 'hour'],
+    [7, 'day'],
+    [4.345, 'week'],
+    [12, 'month'],
+    [Number.POSITIVE_INFINITY, 'year'],
+  ]
+  let valueInUnit = elapsed
+  let unit: Intl.RelativeTimeFormatUnit = 'second'
+  for (const [limit, candidate] of units) {
+    unit = candidate
+    if (valueInUnit < limit) break
+    valueInUnit /= limit
+  }
+  return new Intl.RelativeTimeFormat('fr', { numeric: 'auto' }).format(-Math.floor(valueInUnit), unit)
+}
+
 function App() {
   const [items, setItems] = useState<Item[]>(starterItems)
   const [userEmail, setUserEmail] = useState<string | null>(null)
@@ -138,6 +160,10 @@ function App() {
     return matchesSearch && (category === 'Toutes les catégories' || item.category === category) && (!showLowOnly || item.quantity <= item.min_quantity)
   }), [items, search, category, showLowOnly])
   const lowItems = items.filter(item => item.quantity <= item.min_quantity)
+  const latestUpdatedItem = items.reduce<Item | null>((latest, item) => {
+    if (!latest) return item
+    return new Date(item.updated_at).getTime() > new Date(latest.updated_at).getTime() ? item : latest
+  }, null)
   const totalUnits = items.reduce((sum, item) => sum + Number(item.quantity), 0)
   const canManageInventory = !isSupabaseConfigured || userRole === 'admin' || userRole === 'super_admin'
 
@@ -363,7 +389,7 @@ function App() {
             <article className="stat-card"><div className="stat-top"><span>Articles suivis</span><span className="stat-icon violet"><Package size={17} /></span></div><div className="stat-value">{items.length}<span className="stat-unit"> références</span></div><div className="stat-note"><span className="note-pill positive">+2</span><span>depuis la semaine dernière</span></div></article>
             <article className="stat-card"><div className="stat-top"><span>Unités en stock</span><span className="stat-icon green"><Boxes size={17} /></span></div><div className="stat-value">{totalUnits}<span className="stat-unit"> unités</span></div><div className="stat-note"><span className="note-muted">Toutes catégories confondues</span></div></article>
             <article className="stat-card"><div className="stat-top"><span>À réapprovisionner</span><span className="stat-icon amber"><Bell size={17} /></span></div><div className="stat-value">{lowItems.length}<span className="stat-unit"> articles</span></div><div className="stat-note"><button className="text-link" onClick={() => navigate('alerts')}>Voir les alertes <span>→</span></button></div></article>
-            <article className="stat-card activity-card"><div className="stat-top"><span>Activité récente</span><span className="stat-icon blue"><Activity size={17} /></span></div><div className="stat-value activity-value"><span className="activity-face">CL</span> Camille a modifié le stock</div><div className="stat-note"><span className="note-muted">Il y a 12 minutes</span></div></article>
+            <article className="stat-card activity-card"><div className="stat-top"><span>Dernière mise à jour</span><span className="stat-icon blue"><Activity size={17} /></span></div><div className="stat-value activity-value">{latestUpdatedItem?.name ?? 'Aucune activité'}</div><div className="stat-note"><span className="note-muted">{latestUpdatedItem ? `${latestUpdatedItem.quantity} ${latestUpdatedItem.unit} · ${timeSince(latestUpdatedItem.updated_at)}` : 'Les changements apparaîtront ici.'}</span></div></article>
           </section>
           </>}
 
