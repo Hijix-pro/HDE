@@ -131,3 +131,37 @@ export async function PATCH(request: Request) {
   if (updateError) return NextResponse.json({ error: updateError.message }, { status: 500 })
   return NextResponse.json({ updated: true })
 }
+
+export async function DELETE(request: Request) {
+  const gate = await requireAdmin(request)
+  if (!gate.ok) return gate.response
+  if (gate.role !== 'super_admin') {
+    return NextResponse.json({ error: 'Seul le super admin peut supprimer des comptes.' }, { status: 403 })
+  }
+
+  let body: { id?: string }
+  try {
+    body = await request.json()
+  } catch {
+    return NextResponse.json({ error: 'Requête invalide.' }, { status: 400 })
+  }
+  const id = body.id?.trim()
+  if (!id) return NextResponse.json({ error: 'Compte à supprimer non indiqué.' }, { status: 400 })
+  if (id === gate.user.id) {
+    return NextResponse.json({ error: 'Vous ne pouvez pas supprimer votre propre compte depuis ce panneau.' }, { status: 400 })
+  }
+
+  const { data: target, error: targetError } = await gate.client
+    .from('profiles')
+    .select('role')
+    .eq('id', id)
+    .maybeSingle()
+  if (targetError) return NextResponse.json({ error: targetError.message }, { status: 500 })
+  if (target?.role === 'super_admin') {
+    return NextResponse.json({ error: 'Le compte super admin est protégé.' }, { status: 400 })
+  }
+
+  const { error } = await gate.client.auth.admin.deleteUser(id)
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  return NextResponse.json({ deleted: true })
+}

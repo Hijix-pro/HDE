@@ -90,7 +90,11 @@ td{border-color:#f0e8df}
 .admin-member-email strong{overflow-wrap:anywhere;color:#3b3029;font-size:11px}
 .admin-member-email span,.admin-empty{color:#83756a;font-size:10px}
 .admin-member-row input,.admin-member-row select,.admin-invite-form input{min-width:0}
+.admin-member-actions{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.button-danger{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:38px;padding:0 12px;border:1px solid #e8b8a8;border-radius:7px;background:#fff6f2;color:#a9462e;font:inherit;font-size:11px;font-weight:600;cursor:pointer}
+.button-danger:hover:not(:disabled){background:#fce8e0}
+.button-danger:disabled{opacity:.6;cursor:wait}
 .admin-empty{padding:0 20px 18px;margin:0}
 .admin-error{margin:0 0 16px}
-@media(max-width:1050px){.admin-invite-form{grid-template-columns:1fr 1fr}.admin-member-row{grid-template-columns:1fr 1fr}.admin-member-email{grid-column:1/-1}.admin-member-row>.button{justify-self:start}}
+@media(max-width:1050px){.admin-invite-form{grid-template-columns:1fr 1fr}.admin-member-row{grid-template-columns:1fr 1fr}.admin-member-email{grid-column:1/-1}.admin-member-row>.button,.admin-member-actions{justify-self:start}}
 @media(max-width:720px){.admin-invite-form{grid-template-columns:1fr;padding:0 14px 16px}.admin-member-row{grid-template-columns:1fr;padding:14px}.admin-member-email{grid-column:auto}.admin-panel .panel-heading{padding:16px 14px}}

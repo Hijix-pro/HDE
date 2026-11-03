@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Activity, ArrowDownUp, Bell, Boxes, Check, ChevronDown, CircleHelp, LayoutDashboard, LogOut, Menu, Package, Plus, Search, Settings2, ShieldCheck, SlidersHorizontal, UserRound, X } from 'lucide-react'
+import { Activity, ArrowDownUp, Bell, Boxes, Check, ChevronDown, CircleHelp, LayoutDashboard, LogOut, Menu, Package, Plus, Search, Settings2, ShieldCheck, SlidersHorizontal, Trash2, UserRound, X } from 'lucide-react'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import type { Item, ItemInput } from './types'
 
@@ -61,6 +61,7 @@ function App() {
   const [inviteLastName, setInviteLastName] = useState('')
   const [inviteBusy, setInviteBusy] = useState(false)
   const [savingAdminUserId, setSavingAdminUserId] = useState<string | null>(null)
+  const [deletingAdminUserId, setDeletingAdminUserId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!supabase) { setAuthReady(true); return }
@@ -199,7 +200,7 @@ function App() {
     else if (attributes.data) setAccountMessage('Votre prénom et votre nom ont été mis à jour.')
     else setAccountMessage('Votre mot de passe a été mis à jour.')
   }
-  async function adminRequest(method: 'POST' | 'PATCH', body: Record<string, string>) {
+  async function adminRequest(method: 'POST' | 'PATCH' | 'DELETE', body: Record<string, string>) {
     if (!supabase) throw new Error('Supabase n’est pas configuré.')
     const { data: { session } } = await supabase.auth.getSession()
     if (!session?.access_token) throw new Error('Votre session a expiré. Reconnectez-vous.')
@@ -232,6 +233,20 @@ function App() {
     } catch (error) {
       setAdminError(error instanceof Error ? error.message : 'Impossible de mettre à jour ce compte.')
     } finally { setSavingAdminUserId(null) }
+  }
+  async function deleteAdminMember(member: AdminUser) {
+    if (userRole !== 'super_admin' || member.id === userId || member.role === 'super_admin') return
+    const name = [member.first_name, member.last_name].filter(Boolean).join(' ')
+    const label = name ? `${name} (${member.email})` : member.email
+    if (!window.confirm(`Supprimer définitivement le compte de ${label} ? Cette action est irréversible.`)) return
+    setDeletingAdminUserId(member.id); setAdminError(''); setAdminNotice('')
+    try {
+      await adminRequest('DELETE', { id: member.id })
+      setAdminUsers(current => current.filter(user => user.id !== member.id))
+      setAdminNotice(`Le compte ${member.email} a été supprimé.`)
+    } catch (error) {
+      setAdminError(error instanceof Error ? error.message : 'Impossible de supprimer ce compte.')
+    } finally { setDeletingAdminUserId(null) }
   }
   function editAdminMember(id: string, field: 'first_name' | 'last_name' | 'role', value: string) {
     setAdminUsers(current => current.map(user => user.id === id ? { ...user, [field]: value } as AdminUser : user))
@@ -344,7 +359,7 @@ function App() {
             {adminNotice && <div className="notice"><Check size={16} /><span>{adminNotice}</span><button onClick={() => setAdminNotice('')} aria-label="Fermer"><X size={15} /></button></div>}
             {adminError && <div className="auth-message admin-error">{adminError}</div>}
             <section className="admin-panel"><div className="panel-heading"><div><h2>Inviter un membre</h2><p>Un lien de création de compte sera envoyé à son adresse email.</p></div></div><form className="admin-invite-form" onSubmit={inviteAdminMember}><label className="field">Prénom<input required value={inviteFirstName} onChange={event => setInviteFirstName(event.target.value)} /></label><label className="field">Nom de famille<input required value={inviteLastName} onChange={event => setInviteLastName(event.target.value)} /></label><label className="field">Email<input required type="email" value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} /></label><button className="button button-primary" disabled={inviteBusy}><Plus size={16} /> {inviteBusy ? 'Envoi…' : 'Envoyer une invitation'}</button></form></section>
-            <section className="admin-panel"><div className="panel-heading"><div><h2>Membres</h2><p>{adminUsers.length} compte{adminUsers.length === 1 ? '' : 's'} dans l’espace.{userRole === 'admin' ? ' Les rôles sont gérés par le super admin.' : ''}</p></div></div>{adminLoading ? <p className="admin-empty">Chargement des comptes…</p> : adminUsers.length === 0 ? <p className="admin-empty">Aucun compte à afficher.</p> : <div className="admin-member-list">{adminUsers.map(member => userRole === 'super_admin' && member.role !== 'super_admin' ? <form className="admin-member-row" key={member.id} onSubmit={event => void saveAdminMember(event, member)}><div className="admin-member-email"><strong>{member.email}</strong><span>{member.id === userId ? 'Votre compte' : `Inscrit le ${new Date(member.created_at).toLocaleDateString('fr-FR')}`}</span></div><label className="field">Prénom<input required value={member.first_name} onChange={event => editAdminMember(member.id, 'first_name', event.target.value)} /></label><label className="field">Nom<input required value={member.last_name} onChange={event => editAdminMember(member.id, 'last_name', event.target.value)} /></label><label className="field">Rôle<select value={member.role} onChange={event => editAdminMember(member.id, 'role', event.target.value as AdminRole)}><option value="member">Membre</option><option value="admin">Administrateur</option></select></label><button className="button button-outline" disabled={savingAdminUserId === member.id}>{savingAdminUserId === member.id ? 'Enregistrement…' : 'Enregistrer'}</button></form> : <div className="admin-member-row admin-member-readonly" key={member.id}><div className="admin-member-email"><strong>{member.email}</strong><span>{member.id === userId ? 'Votre compte' : `Inscrit le ${new Date(member.created_at).toLocaleDateString('fr-FR')}`}</span></div><div className="admin-member-name"><span>Prénom</span><strong>{member.first_name || '—'}</strong></div><div className="admin-member-name"><span>Nom</span><strong>{member.last_name || '—'}</strong></div><div className="admin-member-role">{member.role === 'super_admin' ? 'Super admin' : member.role === 'admin' ? 'Administrateur' : 'Membre'}</div></div>)}</div>}</section>
+            <section className="admin-panel"><div className="panel-heading"><div><h2>Membres</h2><p>{adminUsers.length} compte{adminUsers.length === 1 ? '' : 's'} dans l’espace.{userRole === 'admin' ? ' Les rôles sont gérés par le super admin.' : userRole === 'super_admin' ? ' Vous pouvez modifier les rôles ou supprimer un compte.' : ''}</p></div></div>{adminLoading ? <p className="admin-empty">Chargement des comptes…</p> : adminUsers.length === 0 ? <p className="admin-empty">Aucun compte à afficher.</p> : <div className="admin-member-list">{adminUsers.map(member => userRole === 'super_admin' && member.role !== 'super_admin' ? <form className="admin-member-row" key={member.id} onSubmit={event => void saveAdminMember(event, member)}><div className="admin-member-email"><strong>{member.email}</strong><span>{member.id === userId ? 'Votre compte' : `Inscrit le ${new Date(member.created_at).toLocaleDateString('fr-FR')}`}</span></div><label className="field">Prénom<input required value={member.first_name} onChange={event => editAdminMember(member.id, 'first_name', event.target.value)} /></label><label className="field">Nom<input required value={member.last_name} onChange={event => editAdminMember(member.id, 'last_name', event.target.value)} /></label><label className="field">Rôle<select value={member.role} onChange={event => editAdminMember(member.id, 'role', event.target.value as AdminRole)}><option value="member">Membre</option><option value="admin">Administrateur</option></select></label><div className="admin-member-actions"><button className="button button-outline" disabled={savingAdminUserId === member.id}>{savingAdminUserId === member.id ? 'Enregistrement…' : 'Enregistrer'}</button>{member.id !== userId && <button type="button" className="button button-danger" onClick={() => void deleteAdminMember(member)} disabled={deletingAdminUserId === member.id} aria-label={`Supprimer le compte ${member.email}`} title="Supprimer ce compte">{deletingAdminUserId === member.id ? 'Suppression…' : <><Trash2 size={15} /> Supprimer</>}</button>}</div></form> : <div className="admin-member-row admin-member-readonly" key={member.id}><div className="admin-member-email"><strong>{member.email}</strong><span>{member.id === userId ? 'Votre compte' : `Inscrit le ${new Date(member.created_at).toLocaleDateString('fr-FR')}`}</span></div><div className="admin-member-name"><span>Prénom</span><strong>{member.first_name || '—'}</strong></div><div className="admin-member-name"><span>Nom</span><strong>{member.last_name || '—'}</strong></div><div className="admin-member-role">{member.role === 'super_admin' ? 'Super admin' : member.role === 'admin' ? 'Administrateur' : 'Membre'}</div>{userRole === 'super_admin' && member.id !== userId && member.role !== 'super_admin' && <button className="button button-danger" onClick={() => void deleteAdminMember(member)} disabled={deletingAdminUserId === member.id}>{deletingAdminUserId === member.id ? 'Suppression…' : <><Trash2 size={15} /> Supprimer</>}</button>}</div>)}</div>}</section>
           </>}
           <footer className="page-footer"><span><span className="footer-dot" /> Tout est à jour</span><span>Dernière synchronisation il y a quelques secondes</span></footer>
         </div>
