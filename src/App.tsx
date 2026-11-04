@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react'
-import { Activity, ArrowDownUp, Bell, Boxes, Check, ChevronDown, CircleHelp, LayoutDashboard, LogOut, Menu, Package, Plus, Search, Settings2, ShieldCheck, SlidersHorizontal, Trash2, UserRound, X } from 'lucide-react'
+import { Activity, ArrowDownUp, Bell, Boxes, Check, ChevronDown, CircleHelp, LayoutDashboard, LogOut, Menu, Minus, Package, Plus, Search, Settings2, ShieldCheck, SlidersHorizontal, Trash2, UserRound, X } from 'lucide-react'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
 import type { Item, ItemInput } from './types'
 
@@ -63,6 +63,7 @@ function App() {
   const [form, setForm] = useState<ItemInput>(blankItem)
   const [saveError, setSaveError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [savingQuantityId, setSavingQuantityId] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
   const [activePage, setActivePage] = useState<Page>('overview')
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -339,6 +340,32 @@ function App() {
     setModalOpen(false)
   }
 
+  async function adjustQuantity(item: Item, change: -1 | 1) {
+    if (!canManageInventory || savingQuantityId === item.id) return
+    const quantity = Number(item.quantity) + change
+    if (quantity < 0) return
+    setSavingQuantityId(item.id)
+    const updatedAt = new Date().toISOString()
+    if (supabase && userEmail) {
+      const { data, error } = await supabase
+        .from('inventory_items')
+        .update({ quantity, updated_at: updatedAt })
+        .eq('id', item.id)
+        .select('*')
+        .single()
+      if (error) {
+        setNotice(`Mise à jour impossible : ${error.message}`)
+        setSavingQuantityId(null)
+        return
+      }
+      setItems(current => current.map(existing => existing.id === item.id ? data as Item : existing))
+    } else {
+      setItems(current => current.map(existing => existing.id === item.id ? { ...existing, quantity, updated_at: updatedAt } : existing))
+    }
+    setNotice(`Stock de « ${item.name} » mis à jour : ${quantity} ${item.unit}.`)
+    setSavingQuantityId(null)
+  }
+
   async function deleteItem(item: Item) {
     if (!canManageInventory) { setNotice('Seuls les administrateurs peuvent modifier l’inventaire.'); return }
     if (!window.confirm(`Supprimer « ${item.name} » de l’inventaire ?`)) return
@@ -399,7 +426,7 @@ function App() {
             <div className="panel-heading"><div><h2>Inventaire</h2><p>Retrouvez et gérez tous les articles de votre espace.</p></div><button className="button button-outline" onClick={exportInventory}><ArrowDownUp size={16} /> Exporter</button></div>
             <div className="toolbar"><label className="search-box"><Search size={17} /><input value={search} onChange={e => setSearch(e.target.value)} placeholder="Rechercher un article..." /></label><div className="toolbar-controls"><label className="select-wrap"><SlidersHorizontal size={15} /><select value={category} onChange={e => setCategory(e.target.value)}>{categories.map(value => <option key={value}>{value}</option>)}</select><ChevronDown size={14} /></label><button className={`filter-button ${showLowOnly ? 'selected' : ''}`} onClick={() => setShowLowOnly(!showLowOnly)}><Bell size={15} /> En alerte {lowItems.length > 0 && <span>{lowItems.length}</span>}</button></div></div>
             <div className="table-wrap"><table><thead><tr><th>ARTICLE</th><th>CATÉGORIE</th><th>QUANTITÉ</th><th>EMPLACEMENT</th><th>MISE À JOUR</th><th></th></tr></thead><tbody>
-              {filteredItems.map(item => <tr key={item.id}><td><div className="item-cell"><span className={`item-icon item-${item.category.toLowerCase().replace(/[^a-z]/g, '')}`}><Package size={17} /></span><strong>{item.name}</strong></div></td><td><span className="category-tag">{item.category}</span></td><td><div className="quantity-cell"><strong className={item.quantity <= item.min_quantity ? 'quantity-low' : ''}>{item.quantity}</strong><span>{item.unit}</span>{item.quantity <= item.min_quantity && <span className="low-badge">Bas</span>}</div></td><td><span className="location-cell"><span className="location-dot" />{item.location || '—'}</span></td><td><span className="date-cell">{userEmail ? 'À l’instant' : 'Aujourd’hui'}</span></td><td>{canManageInventory && <div className="row-actions"><button onClick={() => openEdit(item)} aria-label={`Modifier ${item.name}`} title="Modifier"><Settings2 size={16} /></button><button onClick={() => void deleteItem(item)} aria-label={`Supprimer ${item.name}`} title="Supprimer"><X size={16} /></button></div>}</td></tr>)}
+              {filteredItems.map(item => <tr key={item.id}><td><div className="item-cell"><span className={`item-icon item-${item.category.toLowerCase().replace(/[^a-z]/g, '')}`}><Package size={17} /></span><strong>{item.name}</strong></div></td><td><span className="category-tag">{item.category}</span></td><td><div className="quantity-cell">{canManageInventory && <div className="quantity-stepper"><button type="button" onClick={() => void adjustQuantity(item, -1)} disabled={item.quantity <= 0 || savingQuantityId === item.id} aria-label={`Retirer une unité de ${item.name}`} title="Retirer une unité"><Minus size={13} /></button><button type="button" onClick={() => void adjustQuantity(item, 1)} disabled={savingQuantityId === item.id} aria-label={`Ajouter une unité de ${item.name}`} title="Ajouter une unité"><Plus size={13} /></button></div>}<strong className={item.quantity <= item.min_quantity ? 'quantity-low' : ''}>{item.quantity}</strong><span>{item.unit}</span>{item.quantity <= item.min_quantity && <span className="low-badge">Bas</span>}</div></td><td><span className="location-cell"><span className="location-dot" />{item.location || '—'}</span></td><td><span className="date-cell">{userEmail ? 'À l’instant' : 'Aujourd’hui'}</span></td><td>{canManageInventory && <div className="row-actions"><button onClick={() => openEdit(item)} aria-label={`Modifier ${item.name}`} title="Modifier"><Settings2 size={16} /></button><button onClick={() => void deleteItem(item)} aria-label={`Supprimer ${item.name}`} title="Supprimer"><X size={16} /></button></div>}</td></tr>)}
               {filteredItems.length === 0 && <tr><td colSpan={6} className="empty-state">{activePage === 'alerts' ? 'Aucun article à réapprovisionner pour le moment.' : 'Aucun article ne correspond à votre recherche.'}</td></tr>}
             </tbody></table></div>
             <div className="table-footer"><span>Affichage de <strong>{filteredItems.length}</strong> sur <strong>{items.length}</strong> articles</span>{canManageInventory && <button className="button button-small" onClick={openNew}><Plus size={15} /> Nouvel article</button>}</div>

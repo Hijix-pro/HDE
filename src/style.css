@@ -96,5 +96,9 @@ td{border-color:#f0e8df}
 .button-danger:disabled{opacity:.6;cursor:wait}
 .admin-empty{padding:0 20px 18px;margin:0}
 .admin-error{margin:0 0 16px}
+.quantity-stepper{display:inline-flex;align-items:center;gap:3px}
+.quantity-stepper button{width:23px;height:23px;padding:0;display:grid;place-items:center;border:1px solid #e7e5dd;border-radius:6px;background:#fffdf9;color:#5f705f}
+.quantity-stepper button:hover:not(:disabled){background:#edf4ef;border-color:#b8d0bd;color:#256443}
+.quantity-stepper button:disabled{opacity:.4;cursor:not-allowed}
 @media(max-width:1050px){.admin-invite-form{grid-template-columns:1fr 1fr}.admin-member-row{grid-template-columns:1fr 1fr}.admin-member-email{grid-column:1/-1}.admin-member-row>.button,.admin-member-actions{justify-self:start}}
 @media(max-width:720px){.admin-invite-form{grid-template-columns:1fr;padding:0 14px 16px}.admin-member-row{grid-template-columns:1fr;padding:14px}.admin-member-email{grid-column:auto}.admin-panel .panel-heading{padding:16px 14px}}
