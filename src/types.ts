@@ -1,5 +1,6 @@
 export type Item = {
   id: string
+  restaurant_id?: string
   name: string
   category: string
   quantity: number
@@ -9,4 +10,4 @@ export type Item = {
   updated_at: string
 }
 
-export type ItemInput = Omit<Item, 'id' | 'updated_at'>
+export type ItemInput = Omit<Item, 'id' | 'updated_at' | 'restaurant_id'>

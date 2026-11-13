@@ -16,7 +16,7 @@ const inventoryCategories = ['Boisson', 'Alcool', 'Nourritures', 'Friandise', 'C
 const blankItem: ItemInput = { name: '', category: 'Nourritures', quantity: 0, unit: 'unités', min_quantity: 0, location: '' }
 type Page = 'overview' | 'inventory' | 'alerts' | 'settings' | 'help' | 'admin'
 type AdminRole = 'member' | 'admin' | 'super_admin'
-type AdminUser = { id: string; email: string; first_name: string; last_name: string; role: AdminRole; created_at: string; last_sign_in_at: string | null }
+type AdminUser = { id: string; email: string; first_name: string; last_name: string; role: AdminRole; workspace_role?: 'owner' | 'admin' | 'member'; created_at: string; last_sign_in_at: string | null }
 
 function timeSince(value: string) {
   const elapsed = Math.max(0, (Date.now() - new Date(value).getTime()) / 1000)
@@ -47,6 +47,8 @@ function App() {
   const [userFirstName, setUserFirstName] = useState('')
   const [userLastName, setUserLastName] = useState('')
   const [userRole, setUserRole] = useState<AdminRole | null>(null)
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null)
+  const [workspaceName, setWorkspaceName] = useState('Restaurant pilote')
   const [authReady, setAuthReady] = useState(false)
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
   const [authFirstName, setAuthFirstName] = useState('')
@@ -108,20 +110,49 @@ function App() {
   useEffect(() => {
     if (!supabase || !userId) {
       setUserRole(null)
+      setWorkspaceId(null)
+      setWorkspaceName('Restaurant pilote')
       return
     }
     let alive = true
-    void supabase.from('profiles').select('first_name, last_name, role').eq('id', userId).maybeSingle().then(({ data }) => {
+    setUserRole(null)
+    setWorkspaceId(null)
+    setItems([])
+    const loadAccess = async () => {
+      const [profileResult, membershipResult] = await Promise.all([
+        supabase!.from('profiles').select('first_name, last_name, role').eq('id', userId).maybeSingle(),
+        supabase!.from('restaurant_members').select('restaurant_id, role').eq('user_id', userId).order('joined_at').limit(1).maybeSingle(),
+      ])
       if (!alive) return
-      setUserRole(data?.role === 'super_admin' ? 'super_admin' : data?.role === 'admin' ? 'admin' : 'member')
-      if (data?.first_name) setUserFirstName(data.first_name)
-      if (data?.last_name) setUserLastName(data.last_name)
-    })
+      if (profileResult.error || membershipResult.error) {
+        setNotice('Impossible de charger l’accès à votre espace. Vérifiez que la migration multi-restaurants a été appliquée.')
+        setUserRole(profileResult.data?.role === 'super_admin' ? 'super_admin' : 'member')
+        return
+      }
+      const profile = profileResult.data
+      const membership = membershipResult.data
+      setWorkspaceId(membership?.restaurant_id ?? null)
+      setWorkspaceName('Restaurant pilote')
+      if (membership?.restaurant_id) {
+        const { data: restaurant, error: restaurantError } = await supabase!
+          .from('restaurants')
+          .select('name')
+          .eq('id', membership.restaurant_id)
+          .maybeSingle()
+        if (!alive) return
+        if (restaurantError) setNotice(`Impossible de charger le nom du restaurant : ${restaurantError.message}`)
+        else if (restaurant?.name) setWorkspaceName(restaurant.name)
+      }
+      setUserRole(profile?.role === 'super_admin' ? 'super_admin' : membership?.role === 'admin' || membership?.role === 'owner' ? 'admin' : 'member')
+      if (profile?.first_name) setUserFirstName(profile.first_name)
+      if (profile?.last_name) setUserLastName(profile.last_name)
+    }
+    void loadAccess()
     return () => { alive = false }
   }, [userId])
 
   useEffect(() => {
-    if (activePage !== 'admin' || (userRole !== 'admin' && userRole !== 'super_admin') || !supabase) return
+    if (activePage !== 'admin' || !workspaceId || (userRole !== 'admin' && userRole !== 'super_admin') || !supabase) return
     let alive = true
     const loadUsers = async () => {
       setAdminLoading(true)
@@ -131,7 +162,8 @@ function App() {
         if (alive) { setAdminError('Votre session a expiré. Reconnectez-vous.'); setAdminLoading(false) }
         return
       }
-      const response = await fetch('/api/admin/users', { headers: { Authorization: `Bearer ${session.access_token}` } })
+      const query = new URLSearchParams({ restaurant_id: workspaceId })
+      const response = await fetch(`/api/admin/users?${query}`, { headers: { Authorization: `Bearer ${session.access_token}` } })
       const result = await response.json()
       if (!alive) return
       if (!response.ok) setAdminError(result.error ?? 'Impossible de charger les comptes.')
@@ -140,21 +172,25 @@ function App() {
     }
     void loadUsers()
     return () => { alive = false }
-  }, [activePage, userRole, adminRefresh])
+  }, [activePage, userRole, workspaceId, adminRefresh])
 
   useEffect(() => {
-    if (!supabase || !userEmail) return
+    if (!supabase || !userEmail) {
+      if (isSupabaseConfigured) setItems([])
+      return
+    }
+    if (!workspaceId) { setItems([]); return }
     let alive = true
     const load = async () => {
-      const { data, error } = await supabase!.from('inventory_items').select('*').order('name')
+      const { data, error } = await supabase!.from('inventory_items').select('*').eq('restaurant_id', workspaceId).order('name')
       if (!alive) return
       if (error) setNotice(`Chargement impossible : ${error.message}`)
       else setItems((data ?? []) as Item[])
     }
     void load()
-    const channel = supabase.channel('inventory-changes').on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_items' }, () => { void load() }).subscribe()
+    const channel = supabase.channel(`inventory-changes-${workspaceId}`).on('postgres_changes', { event: '*', schema: 'public', table: 'inventory_items', filter: `restaurant_id=eq.${workspaceId}` }, () => { void load() }).subscribe()
     return () => { alive = false; void supabase!.removeChannel(channel) }
-  }, [userEmail])
+  }, [userEmail, workspaceId])
 
   const categories = useMemo(() => ['Toutes les catégories', ...inventoryCategories], [])
   const filteredItems = useMemo(() => items.filter(item => {
@@ -167,7 +203,7 @@ function App() {
     return new Date(item.updated_at).getTime() > new Date(latest.updated_at).getTime() ? item : latest
   }, null)
   const totalUnits = items.reduce((sum, item) => sum + Number(item.quantity), 0)
-  const canManageInventory = !isSupabaseConfigured || userRole === 'admin' || userRole === 'super_admin'
+  const canManageInventory = !isSupabaseConfigured || (!!workspaceId && (userRole === 'admin' || userRole === 'super_admin'))
 
   async function signIn(event: FormEvent) {
     event.preventDefault(); setAuthMessage(''); setAuthBusy(true)
@@ -244,7 +280,8 @@ function App() {
   async function inviteAdminMember(event: FormEvent) {
     event.preventDefault(); setInviteBusy(true); setAdminError(''); setAdminNotice('')
     try {
-      await adminRequest('POST', { email: inviteEmail, first_name: inviteFirstName, last_name: inviteLastName })
+      if (!workspaceId) throw new Error('Aucun restaurant n’est associé à cet espace.')
+      await adminRequest('POST', { restaurant_id: workspaceId, email: inviteEmail, first_name: inviteFirstName, last_name: inviteLastName })
       setInviteEmail(''); setInviteFirstName(''); setInviteLastName('')
       setAdminNotice('Invitation envoyée par email.')
       setAdminRefresh(value => value + 1)
@@ -255,7 +292,8 @@ function App() {
   async function saveAdminMember(event: FormEvent, member: AdminUser) {
     event.preventDefault(); setSavingAdminUserId(member.id); setAdminError(''); setAdminNotice('')
     try {
-      await adminRequest('PATCH', { id: member.id, first_name: member.first_name, last_name: member.last_name, role: member.role })
+      if (!workspaceId) throw new Error('Aucun restaurant n’est associé à cet espace.')
+      await adminRequest('PATCH', { restaurant_id: workspaceId, id: member.id, first_name: member.first_name, last_name: member.last_name, role: member.role })
       setAdminNotice('Compte mis à jour.')
       setAdminRefresh(value => value + 1)
     } catch (error) {
@@ -263,15 +301,16 @@ function App() {
     } finally { setSavingAdminUserId(null) }
   }
   async function deleteAdminMember(member: AdminUser) {
-    if (userRole !== 'super_admin' || member.id === userId || member.role === 'super_admin') return
+    if (userRole !== 'super_admin' || member.id === userId || member.role === 'super_admin' || member.workspace_role === 'owner') return
     const name = [member.first_name, member.last_name].filter(Boolean).join(' ')
     const label = name ? `${name} (${member.email})` : member.email
-    if (!window.confirm(`Supprimer définitivement le compte de ${label} ? Cette action est irréversible.`)) return
+    if (!window.confirm(`Retirer ${label} de l’espace ${workspaceName} ? Son compte restera actif pour ses autres restaurants.`)) return
     setDeletingAdminUserId(member.id); setAdminError(''); setAdminNotice('')
     try {
-      await adminRequest('DELETE', { id: member.id })
+      if (!workspaceId) throw new Error('Aucun restaurant n’est associé à cet espace.')
+      await adminRequest('DELETE', { restaurant_id: workspaceId, id: member.id })
       setAdminUsers(current => current.filter(user => user.id !== member.id))
-      setAdminNotice(`Le compte ${member.email} a été supprimé.`)
+      setAdminNotice(`${member.email} n’a plus accès à cet espace restaurant.`)
     } catch (error) {
       setAdminError(error instanceof Error ? error.message : 'Impossible de supprimer ce compte.')
     } finally { setDeletingAdminUserId(null) }
@@ -326,9 +365,10 @@ function App() {
     setSaveError(''); setSaving(true)
     const input = { ...form, name: form.name.trim(), updated_at: new Date().toISOString() }
     if (supabase && userEmail) {
+      if (!workspaceId) { setSaving(false); setSaveError('Aucun restaurant n’est associé à cet espace.'); return }
       const result = editing
-        ? await supabase.from('inventory_items').update(input).eq('id', editing.id)
-        : await supabase.from('inventory_items').insert(input)
+        ? await supabase.from('inventory_items').update(input).eq('id', editing.id).eq('restaurant_id', workspaceId)
+        : await supabase.from('inventory_items').insert({ ...input, restaurant_id: workspaceId })
       setSaving(false)
       if (result.error) { setSaveError(result.error.message); return }
       setNotice(editing ? 'Article mis à jour.' : 'Article ajouté.')
@@ -356,10 +396,12 @@ function App() {
     setSavingQuantityId(item.id)
     const updatedAt = new Date().toISOString()
     if (supabase && userEmail) {
+      if (!workspaceId) { setNotice('Aucun restaurant n’est associé à cet espace.'); return }
       const { data, error } = await supabase
         .from('inventory_items')
         .update({ quantity, updated_at: updatedAt })
         .eq('id', item.id)
+        .eq('restaurant_id', workspaceId)
         .select('*')
         .single()
       if (error) {
@@ -381,7 +423,8 @@ function App() {
     if (!canManageInventory) { setNotice('Seuls les administrateurs peuvent modifier l’inventaire.'); return }
     if (!window.confirm(`Supprimer « ${item.name} » de l’inventaire ?`)) return
     if (supabase && userEmail) {
-      const { error } = await supabase.from('inventory_items').delete().eq('id', item.id)
+      if (!workspaceId) { setNotice('Aucun restaurant n’est associé à cet espace.'); return }
+      const { error } = await supabase.from('inventory_items').delete().eq('id', item.id).eq('restaurant_id', workspaceId)
       if (error) { setNotice(`Suppression impossible : ${error.message}`); return }
     } else setItems(current => current.filter(existing => existing.id !== item.id))
     setNotice('Article supprimé.')
@@ -403,13 +446,13 @@ function App() {
     <div className="app-shell">
       <aside className={`sidebar ${mobileMenuOpen ? 'mobile-open' : ''}`}>
         <button className="brand" onClick={() => navigate('overview')}><span className="brand-mark"><Boxes size={21} strokeWidth={2.3} /></span><span>HDE-Inventaire</span></button>
-        <button className="workspace-switch" onClick={() => navigate('settings')} aria-label="Ouvrir les paramètres de l’espace"><div className="workspace-avatar">A</div><div className="workspace-text"><strong>AAlex</strong><span>Espace partagé</span></div><ChevronDown size={16} /></button>
+        <button className="workspace-switch" onClick={() => navigate('settings')} aria-label="Ouvrir les paramètres de l’espace"><div className="workspace-avatar">{(workspaceId ? workspaceName : userEmail ? '—' : 'R').slice(0, 1).toUpperCase()}</div><div className="workspace-text"><strong>{workspaceId ? workspaceName : userEmail ? 'Aucun restaurant' : 'Restaurant pilote'}</strong><span>Espace restaurant</span></div><ChevronDown size={16} /></button>
         <div className="nav-label">ESPACE DE TRAVAIL</div>
         <nav className="nav-list" aria-label="Navigation principale">
           <button className={`nav-link ${activePage === 'overview' ? 'active' : ''}`} onClick={() => navigate('overview')} aria-current={activePage === 'overview' ? 'page' : undefined}><LayoutDashboard size={18} /> Vue d’ensemble</button>
           <button className={`nav-link ${activePage === 'inventory' ? 'active' : ''}`} onClick={() => navigate('inventory')} aria-current={activePage === 'inventory' ? 'page' : undefined}><Package size={18} /> Inventaire <span className="nav-count">{items.length}</span></button>
           <button className={`nav-link ${activePage === 'alerts' ? 'active' : ''}`} onClick={() => navigate('alerts')} aria-current={activePage === 'alerts' ? 'page' : undefined}><Bell size={18} /> Alertes{lowItems.length > 0 && <span className="alert-count">{lowItems.length}</span>}</button>
-          {(userRole === 'admin' || userRole === 'super_admin') && <button className={`nav-link ${activePage === 'admin' ? 'active' : ''}`} onClick={() => navigate('admin')} aria-current={activePage === 'admin' ? 'page' : undefined}><ShieldCheck size={18} /> Administration</button>}
+          {workspaceId && (userRole === 'admin' || userRole === 'super_admin') && <button className={`nav-link ${activePage === 'admin' ? 'active' : ''}`} onClick={() => navigate('admin')} aria-current={activePage === 'admin' ? 'page' : undefined}><ShieldCheck size={18} /> Administration</button>}
         </nav>
         <div className="sidebar-bottom"><div className="tip-card"><div className="tip-icon"><ShieldCheck size={16} /></div><strong>Tout le monde à jour</strong><p>Les changements sont partagés instantanément avec votre équipe.</p></div><button className={`nav-link subtle ${activePage === 'settings' ? 'active' : ''}`} onClick={() => navigate('settings')} aria-current={activePage === 'settings' ? 'page' : undefined}><Settings2 size={18} /> Paramètres</button><button className={`nav-link subtle ${activePage === 'help' ? 'active' : ''}`} onClick={() => navigate('help')} aria-current={activePage === 'help' ? 'page' : undefined}><CircleHelp size={18} /> Aide & support</button></div>
         <div className="profile-row"><div className="profile-avatar">{userFirstName ? userFirstName[0].toUpperCase() : userEmail ? userEmail[0].toUpperCase() : 'CL'}</div><div className="profile-info"><strong>{userDisplayName}</strong><span>{userEmail ? 'Membre' : 'Administratrice'}</span></div>{userEmail && <button className="icon-button" onClick={signOut} aria-label="Se déconnecter" title="Se déconnecter"><LogOut size={17} /></button>}</div>
@@ -420,7 +463,8 @@ function App() {
         <div className="content-wrap">
           {!isSupabaseConfigured && <div className="setup-banner"><div><strong>Mode aperçu</strong><span>Ajoutez vos identifiants Supabase pour partager les données en ligne.</span></div><a href="./README.md">Voir les étapes <span>↗</span></a></div>}
           {notice && <div className="notice"><Check size={16} /><span>{notice}</span><button onClick={() => setNotice('')} aria-label="Fermer"><X size={15} /></button></div>}
-          {userEmail && userRole === 'member' && <div className="setup-banner"><div><strong>Accès membre</strong><span>Vous pouvez consulter l’inventaire. Les modifications sont réservées aux administrateurs.</span></div></div>}
+          {userEmail && !workspaceId && <div className="setup-banner"><div><strong>Aucun espace restaurant</strong><span>Votre compte n’est pas encore rattaché à un restaurant. Demandez une invitation à son administrateur.</span></div></div>}
+          {userEmail && workspaceId && userRole === 'member' && <div className="setup-banner"><div><strong>Accès membre</strong><span>Vous pouvez consulter l’inventaire. Les modifications sont réservées aux administrateurs.</span></div></div>}
           {activePage === 'overview' && <>
           <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> VOTRE ESPACE DE TRAVAIL</div><h1>Bonjour {userFirstName || (userEmail ? 'membre' : 'Camille')} <span className="wave">✦</span></h1><p>Voici ce qui se passe dans votre inventaire aujourd’hui.</p></div>{canManageInventory && <button className="button button-primary" onClick={openNew}><Plus size={17} /> Ajouter un article</button>}</section>
           <section className="stats-grid" aria-label="Résumé de l’inventaire">
@@ -444,14 +488,14 @@ function App() {
           </section>
           </>}
           {activePage === 'settings' && <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> HDE-INVENTAIRE</div><h1>Paramètres</h1><p>Informations sur votre espace et votre connexion.</p></div></section>}
-          {activePage === 'settings' && <section className="info-grid"><article className="info-card"><span className="info-label">ESPACE DE TRAVAIL</span><h2>AAlex</h2><p>Inventaire partagé entre les membres de cet espace.</p></article><article className="info-card"><span className="info-label">COMPTE</span><h2>{userEmail ?? 'Mode aperçu'}</h2><p>{userEmail ? 'Vous êtes connecté à cet espace.' : 'Connectez-vous pour synchroniser les changements avec Supabase.'}</p>{userEmail && <button className="button button-outline" onClick={signOut}><LogOut size={16} /> Se déconnecter</button>}</article><article className="info-card"><span className="info-label">SYNCHRONISATION</span><h2>{supabase && userEmail ? 'Active' : 'Mode aperçu'}</h2><p>{supabase && userEmail ? 'Les changements d’inventaire sont enregistrés dans Supabase.' : 'Les changements ne sont pas encore partagés en ligne.'}</p></article></section>}
+          {activePage === 'settings' && <section className="info-grid"><article className="info-card"><span className="info-label">ESPACE RESTAURANT</span><h2>{workspaceId ? workspaceName : 'Aucun espace'}</h2><p>{workspaceId ? 'Inventaire partagé entre les membres de ce restaurant.' : 'Un administrateur doit vous inviter dans son restaurant.'}</p></article><article className="info-card"><span className="info-label">COMPTE</span><h2>{userEmail ?? 'Mode aperçu'}</h2><p>{userEmail ? 'Vous êtes connecté à cet espace.' : 'Connectez-vous pour synchroniser les changements avec Supabase.'}</p>{userEmail && <button className="button button-outline" onClick={signOut}><LogOut size={16} /> Se déconnecter</button>}</article><article className="info-card"><span className="info-label">SYNCHRONISATION</span><h2>{supabase && userEmail ? 'Active' : 'Mode aperçu'}</h2><p>{supabase && userEmail ? 'Les changements d’inventaire sont enregistrés dans Supabase.' : 'Les changements ne sont pas encore partagés en ligne.'}</p></article></section>}
           {activePage === 'help' && <><section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> HDE-INVENTAIRE</div><h1>Aide & support</h1><p>Quelques repères pour gérer votre inventaire.</p></div></section><section className="info-grid help-grid"><article className="info-card"><span className="info-label">AJOUTER UN ARTICLE</span><h2>Suivre un nouveau produit</h2><p>Ouvrez <strong>Inventaire</strong>, puis cliquez sur <strong>Ajouter un article</strong>. Renseignez son nom, sa quantité, son unité et son seuil d’alerte.</p></article><article className="info-card"><span className="info-label">ALERTES</span><h2>Repérer les stocks bas</h2><p>La page <strong>Alertes</strong> affiche les articles dont la quantité est inférieure ou égale au seuil défini.</p></article><article className="info-card"><span className="info-label">PARTAGE</span><h2>Voir les mêmes données</h2><p>Connectez-vous avec un compte autorisé pour consulter et modifier le même inventaire partagé.</p></article></section></>}
-          {activePage === 'admin' && (userRole === 'admin' || userRole === 'super_admin') && <>
+          {activePage === 'admin' && workspaceId && (userRole === 'admin' || userRole === 'super_admin') && <>
             <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> {userRole === 'super_admin' ? 'ESPACE SUPER ADMIN' : 'ESPACE ADMINISTRATEUR'}</div><h1>{userRole === 'super_admin' ? 'Gestion complète' : 'Gestion du stock'}</h1><p>{userRole === 'super_admin' ? 'Invitez des membres et attribuez les rôles administrateur ou membre.' : 'Invitez des membres et gérez les articles de l’inventaire.'}</p></div></section>
             {adminNotice && <div className="notice"><Check size={16} /><span>{adminNotice}</span><button onClick={() => setAdminNotice('')} aria-label="Fermer"><X size={15} /></button></div>}
             {adminError && <div className="auth-message admin-error">{adminError}</div>}
             <section className="admin-panel"><div className="panel-heading"><div><h2>Inviter un membre</h2><p>Un lien de création de compte sera envoyé à son adresse email.</p></div></div><form className="admin-invite-form" onSubmit={inviteAdminMember}><label className="field">Prénom<input required value={inviteFirstName} onChange={event => setInviteFirstName(event.target.value)} /></label><label className="field">Nom de famille<input required value={inviteLastName} onChange={event => setInviteLastName(event.target.value)} /></label><label className="field">Email<input required type="email" value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} /></label><button className="button button-primary" disabled={inviteBusy}><Plus size={16} /> {inviteBusy ? 'Envoi…' : 'Envoyer une invitation'}</button></form></section>
-            <section className="admin-panel"><div className="panel-heading"><div><h2>Membres</h2><p>{adminUsers.length} compte{adminUsers.length === 1 ? '' : 's'} dans l’espace.{userRole === 'admin' ? ' Les rôles sont gérés par le super admin.' : userRole === 'super_admin' ? ' Vous pouvez modifier les rôles ou supprimer un compte.' : ''}</p></div></div>{adminLoading ? <p className="admin-empty">Chargement des comptes…</p> : adminUsers.length === 0 ? <p className="admin-empty">Aucun compte à afficher.</p> : <div className="admin-member-list">{adminUsers.map(member => userRole === 'super_admin' && member.role !== 'super_admin' ? <form className="admin-member-row" key={member.id} onSubmit={event => void saveAdminMember(event, member)}><div className="admin-member-email"><strong>{member.email}</strong><span>{member.id === userId ? 'Votre compte' : `Inscrit le ${new Date(member.created_at).toLocaleDateString('fr-FR')}`}</span></div><label className="field">Prénom<input required value={member.first_name} onChange={event => editAdminMember(member.id, 'first_name', event.target.value)} /></label><label className="field">Nom<input required value={member.last_name} onChange={event => editAdminMember(member.id, 'last_name', event.target.value)} /></label><label className="field">Rôle<select value={member.role} onChange={event => editAdminMember(member.id, 'role', event.target.value as AdminRole)}><option value="member">Membre</option><option value="admin">Administrateur</option></select></label><div className="admin-member-actions"><button className="button button-outline" disabled={savingAdminUserId === member.id}>{savingAdminUserId === member.id ? 'Enregistrement…' : 'Enregistrer'}</button>{member.id !== userId && <button type="button" className="button button-danger" onClick={() => void deleteAdminMember(member)} disabled={deletingAdminUserId === member.id} aria-label={`Supprimer le compte ${member.email}`} title="Supprimer ce compte">{deletingAdminUserId === member.id ? 'Suppression…' : <><Trash2 size={15} /> Supprimer</>}</button>}</div></form> : <div className="admin-member-row admin-member-readonly" key={member.id}><div className="admin-member-email"><strong>{member.email}</strong><span>{member.id === userId ? 'Votre compte' : `Inscrit le ${new Date(member.created_at).toLocaleDateString('fr-FR')}`}</span></div><div className="admin-member-name"><span>Prénom</span><strong>{member.first_name || '—'}</strong></div><div className="admin-member-name"><span>Nom</span><strong>{member.last_name || '—'}</strong></div><div className="admin-member-role">{member.role === 'super_admin' ? 'Super admin' : member.role === 'admin' ? 'Administrateur' : 'Membre'}</div>{userRole === 'super_admin' && member.id !== userId && member.role !== 'super_admin' && <button className="button button-danger" onClick={() => void deleteAdminMember(member)} disabled={deletingAdminUserId === member.id}>{deletingAdminUserId === member.id ? 'Suppression…' : <><Trash2 size={15} /> Supprimer</>}</button>}</div>)}</div>}</section>
+            <section className="admin-panel"><div className="panel-heading"><div><h2>Membres</h2><p>{adminUsers.length} compte{adminUsers.length === 1 ? '' : 's'} dans l’espace.{userRole === 'admin' ? ' Les rôles sont gérés par le super admin.' : userRole === 'super_admin' ? ' Vous pouvez modifier les rôles ou retirer un compte de cet espace.' : ''}</p></div></div>{adminLoading ? <p className="admin-empty">Chargement des comptes…</p> : adminUsers.length === 0 ? <p className="admin-empty">Aucun compte à afficher.</p> : <div className="admin-member-list">{adminUsers.map(member => userRole === 'super_admin' && member.role !== 'super_admin' && member.workspace_role !== 'owner' ? <form className="admin-member-row" key={member.id} onSubmit={event => void saveAdminMember(event, member)}><div className="admin-member-email"><strong>{member.email}</strong><span>{member.id === userId ? 'Votre compte' : `Inscrit le ${new Date(member.created_at).toLocaleDateString('fr-FR')}`}</span></div><label className="field">Prénom<input required value={member.first_name} onChange={event => editAdminMember(member.id, 'first_name', event.target.value)} /></label><label className="field">Nom<input required value={member.last_name} onChange={event => editAdminMember(member.id, 'last_name', event.target.value)} /></label><label className="field">Rôle<select value={member.role} onChange={event => editAdminMember(member.id, 'role', event.target.value as AdminRole)}><option value="member">Membre</option><option value="admin">Administrateur</option></select></label><div className="admin-member-actions"><button className="button button-outline" disabled={savingAdminUserId === member.id}>{savingAdminUserId === member.id ? 'Enregistrement…' : 'Enregistrer'}</button>{member.id !== userId && <button type="button" className="button button-danger" onClick={() => void deleteAdminMember(member)} disabled={deletingAdminUserId === member.id} aria-label={`Retirer ${member.email} de cet espace`} title="Retirer de cet espace">{deletingAdminUserId === member.id ? 'Retrait…' : <><Trash2 size={15} /> Retirer</>}</button>}</div></form> : <div className="admin-member-row admin-member-readonly" key={member.id}><div className="admin-member-email"><strong>{member.email}</strong><span>{member.id === userId ? 'Votre compte' : `Inscrit le ${new Date(member.created_at).toLocaleDateString('fr-FR')}`}</span></div><div className="admin-member-name"><span>Prénom</span><strong>{member.first_name || '—'}</strong></div><div className="admin-member-name"><span>Nom</span><strong>{member.last_name || '—'}</strong></div><div className="admin-member-role">{member.workspace_role === 'owner' ? 'Propriétaire' : member.role === 'super_admin' ? 'Super admin' : member.role === 'admin' ? 'Administrateur' : 'Membre'}</div>{userRole === 'super_admin' && member.id !== userId && member.role !== 'super_admin' && member.workspace_role !== 'owner' && <button className="button button-danger" onClick={() => void deleteAdminMember(member)} disabled={deletingAdminUserId === member.id}>{deletingAdminUserId === member.id ? 'Retrait…' : <><Trash2 size={15} /> Retirer</>}</button>}</div>)}</div>}</section>
           </>}
           <footer className="page-footer"><span><span className="footer-dot" /> Tout est à jour</span><span>Dernière synchronisation il y a quelques secondes</span></footer>
         </div>

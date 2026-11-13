@@ -14,47 +14,8 @@ alter table public.profiles drop constraint if exists profiles_role_check;
 alter table public.profiles add constraint profiles_role_check
   check (role in ('member', 'admin', 'super_admin'));
 
-create or replace function public.is_inventory_admin()
-returns boolean
-language sql
-stable
-security definer
-set search_path = ''
-as $$
-  select exists (
-    select 1
-    from public.profiles
-    where id = (select auth.uid())
-      and role in ('admin', 'super_admin')
-  );
-$$;
-
-revoke all on function public.is_inventory_admin() from public;
-grant execute on function public.is_inventory_admin() to authenticated;
-
-drop policy if exists "Authenticated users can add inventory items" on public.inventory_items;
-drop policy if exists "Admins can add inventory items" on public.inventory_items;
-create policy "Admins can add inventory items"
-on public.inventory_items for insert to authenticated
-with check ((select public.is_inventory_admin()));
-
-drop policy if exists "Authenticated users can update inventory items" on public.inventory_items;
-drop policy if exists "Admins can update inventory items" on public.inventory_items;
-create policy "Admins can update inventory items"
-on public.inventory_items for update to authenticated
-using ((select public.is_inventory_admin()))
-with check ((select public.is_inventory_admin()));
-
-drop policy if exists "Authenticated users can delete inventory items" on public.inventory_items;
-drop policy if exists "Admins can delete inventory items" on public.inventory_items;
-create policy "Admins can delete inventory items"
-on public.inventory_items for delete to authenticated
-using ((select public.is_inventory_admin()));
-
-drop policy if exists "Users can view own profile or admins can view all" on public.profiles;
-create policy "Users can view own profile or admins can view all"
-on public.profiles for select to authenticated
-using ((select auth.uid()) = id or (select public.is_inventory_admin()));
+-- Les politiques d'accès à l'inventaire et aux profils sont créées par
+-- enable-multiple-restaurants.sql pour limiter les données à chaque restaurant.
 
 create or replace function public.sync_profile_from_auth_user()
 returns trigger
