@@ -68,21 +68,25 @@ La clé Publishable est prévue pour une application web. La sécurité des donn
 5. Dans Supabase, ouvrez **Authentication → URL Configuration** et ajoutez le domaine Vercel à **Site URL** et aux URLs de redirection autorisées.
 6. Après toute modification des variables Vercel, redéployez. Sur l’URL publiée, testez inscription, lecture, ajout, modification, suppression et partage avec un deuxième compte.
 
+## Créer un espace client
+
+Le **super admin** peut ouvrir **Administration → Créer un restaurant client**. Il renseigne le nom du restaurant et l’adresse de son responsable. L’application crée un espace isolé et envoie une invitation au responsable, qui pourra ensuite inviter les membres de son équipe depuis l’administration du restaurant.
+
 ## Checklist avant partage du lien
 
 - [ ] Le script `supabase/schema.sql` a été appliqué au bon projet.
 - [ ] L’inscription et la confirmation email fonctionnent.
 - [ ] Les deux variables Supabase sont présentes dans les trois environnements Vercel.
 - [ ] Aucune clé Secret/service role n’est dans le dépôt ou le navigateur.
-- [ ] RLS est activé; seuls les utilisateurs authentifiés ont accès.
+- [ ] RLS est activé; chaque utilisateur ne voit que les restaurants auxquels il appartient.
 - [ ] Un article ajouté par un compte apparaît sur l’autre appareil.
 - [ ] Le lien Vercel ouvre l’application sur mobile et ordinateur.
 - [ ] Les données de démonstration ont été remplacées par les données réelles.
 
 ## Étapes possibles ensuite
 
-1. Espaces de travail et invitations avec des droits par équipe.
-2. Historique de mouvements et journal des modifications.
+1. Gestion des abonnements et paiements par restaurant.
+2. Historique des mouvements et journal des modifications.
 3. Import/export CSV et lecture de codes-barres.
 4. Rôles administrateur/membre et alertes email.
 

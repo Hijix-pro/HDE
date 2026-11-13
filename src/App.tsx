@@ -17,6 +17,7 @@ const blankItem: ItemInput = { name: '', category: 'Nourritures', quantity: 0, u
 type Page = 'overview' | 'inventory' | 'alerts' | 'settings' | 'help' | 'admin'
 type AdminRole = 'member' | 'admin' | 'super_admin'
 type AdminUser = { id: string; email: string; first_name: string; last_name: string; role: AdminRole; workspace_role?: 'owner' | 'admin' | 'member'; created_at: string; last_sign_in_at: string | null }
+type RestaurantSummary = { id: string; name: string; created_at: string }
 
 function timeSince(value: string) {
   const elapsed = Math.max(0, (Date.now() - new Date(value).getTime()) / 1000)
@@ -88,6 +89,12 @@ function App() {
   const [inviteBusy, setInviteBusy] = useState(false)
   const [savingAdminUserId, setSavingAdminUserId] = useState<string | null>(null)
   const [deletingAdminUserId, setDeletingAdminUserId] = useState<string | null>(null)
+  const [restaurants, setRestaurants] = useState<RestaurantSummary[]>([])
+  const [restaurantName, setRestaurantName] = useState('')
+  const [restaurantOwnerFirstName, setRestaurantOwnerFirstName] = useState('')
+  const [restaurantOwnerLastName, setRestaurantOwnerLastName] = useState('')
+  const [restaurantOwnerEmail, setRestaurantOwnerEmail] = useState('')
+  const [creatingRestaurant, setCreatingRestaurant] = useState(false)
 
   useEffect(() => {
     if (!supabase) { setAuthReady(true); return }
@@ -173,6 +180,22 @@ function App() {
     void loadUsers()
     return () => { alive = false }
   }, [activePage, userRole, workspaceId, adminRefresh])
+
+  useEffect(() => {
+    if (activePage !== 'admin' || userRole !== 'super_admin' || !supabase) return
+    let alive = true
+    const loadRestaurants = async () => {
+      const { data: { session } } = await supabase!.auth.getSession()
+      if (!session?.access_token) return
+      const response = await fetch('/api/admin/restaurants', { headers: { Authorization: `Bearer ${session.access_token}` } })
+      const result = await response.json()
+      if (!alive) return
+      if (!response.ok) setAdminError(result.error ?? 'Impossible de charger les restaurants.')
+      else setRestaurants(result.restaurants as RestaurantSummary[])
+    }
+    void loadRestaurants()
+    return () => { alive = false }
+  }, [activePage, userRole, adminRefresh])
 
   useEffect(() => {
     if (!supabase || !userEmail) {
@@ -288,6 +311,32 @@ function App() {
     } catch (error) {
       setAdminError(error instanceof Error ? error.message : 'Impossible d’envoyer l’invitation.')
     } finally { setInviteBusy(false) }
+  }
+  async function createRestaurant(event: FormEvent) {
+    event.preventDefault()
+    if (!supabase || userRole !== 'super_admin') return
+    setCreatingRestaurant(true); setAdminError(''); setAdminNotice('')
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session?.access_token) throw new Error('Votre session a expiré. Reconnectez-vous.')
+      const response = await fetch('/api/admin/restaurants', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${session.access_token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: restaurantName,
+          owner_first_name: restaurantOwnerFirstName,
+          owner_last_name: restaurantOwnerLastName,
+          owner_email: restaurantOwnerEmail,
+        }),
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error ?? 'Impossible de créer ce restaurant.')
+      setRestaurants(current => [result.restaurant as RestaurantSummary, ...current])
+      setAdminNotice(`Restaurant « ${restaurantName.trim()} » créé. Une invitation a été envoyée à ${restaurantOwnerEmail.trim()}.`)
+      setRestaurantName(''); setRestaurantOwnerFirstName(''); setRestaurantOwnerLastName(''); setRestaurantOwnerEmail('')
+    } catch (error) {
+      setAdminError(error instanceof Error ? error.message : 'Impossible de créer ce restaurant.')
+    } finally { setCreatingRestaurant(false) }
   }
   async function saveAdminMember(event: FormEvent, member: AdminUser) {
     event.preventDefault(); setSavingAdminUserId(member.id); setAdminError(''); setAdminNotice('')
@@ -494,6 +543,7 @@ function App() {
             <section className="page-heading"><div><div className="eyebrow"><span className="eyebrow-line" /> {userRole === 'super_admin' ? 'ESPACE SUPER ADMIN' : 'ESPACE ADMINISTRATEUR'}</div><h1>{userRole === 'super_admin' ? 'Gestion complète' : 'Gestion du stock'}</h1><p>{userRole === 'super_admin' ? 'Invitez des membres et attribuez les rôles administrateur ou membre.' : 'Invitez des membres et gérez les articles de l’inventaire.'}</p></div></section>
             {adminNotice && <div className="notice"><Check size={16} /><span>{adminNotice}</span><button onClick={() => setAdminNotice('')} aria-label="Fermer"><X size={15} /></button></div>}
             {adminError && <div className="auth-message admin-error">{adminError}</div>}
+            {userRole === 'super_admin' && <section className="admin-panel"><div className="panel-heading"><div><h2>Créer un restaurant client</h2><p>Son responsable recevra une invitation et pourra inviter son équipe.</p></div></div><form className="admin-restaurant-form" onSubmit={createRestaurant}><label className="field">Nom du restaurant<input required maxLength={80} value={restaurantName} onChange={event => setRestaurantName(event.target.value)} placeholder="Ex. Le Bistrot" /></label><label className="field">Prénom du responsable<input required value={restaurantOwnerFirstName} onChange={event => setRestaurantOwnerFirstName(event.target.value)} /></label><label className="field">Nom de famille<input required value={restaurantOwnerLastName} onChange={event => setRestaurantOwnerLastName(event.target.value)} /></label><label className="field">Email du responsable<input required type="email" value={restaurantOwnerEmail} onChange={event => setRestaurantOwnerEmail(event.target.value)} /></label><button className="button button-primary" disabled={creatingRestaurant}><Plus size={16} /> {creatingRestaurant ? 'Création…' : 'Créer et inviter'}</button></form><div className="restaurant-list"><div className="restaurant-list-heading">Restaurants enregistrés ({restaurants.length})</div>{restaurants.map(restaurant => <div className="restaurant-list-row" key={restaurant.id}><strong>{restaurant.name}</strong><span>Créé le {new Date(restaurant.created_at).toLocaleDateString('fr-FR')}</span></div>)}{restaurants.length === 0 && <p className="admin-empty">Aucun restaurant enregistré.</p>}</div></section>}
             <section className="admin-panel"><div className="panel-heading"><div><h2>Inviter un membre</h2><p>Un lien de création de compte sera envoyé à son adresse email.</p></div></div><form className="admin-invite-form" onSubmit={inviteAdminMember}><label className="field">Prénom<input required value={inviteFirstName} onChange={event => setInviteFirstName(event.target.value)} /></label><label className="field">Nom de famille<input required value={inviteLastName} onChange={event => setInviteLastName(event.target.value)} /></label><label className="field">Email<input required type="email" value={inviteEmail} onChange={event => setInviteEmail(event.target.value)} /></label><button className="button button-primary" disabled={inviteBusy}><Plus size={16} /> {inviteBusy ? 'Envoi…' : 'Envoyer une invitation'}</button></form></section>
             <section className="admin-panel"><div className="panel-heading"><div><h2>Membres</h2><p>{adminUsers.length} compte{adminUsers.length === 1 ? '' : 's'} dans l’espace.{userRole === 'admin' ? ' Les rôles sont gérés par le super admin.' : userRole === 'super_admin' ? ' Vous pouvez modifier les rôles ou retirer un compte de cet espace.' : ''}</p></div></div>{adminLoading ? <p className="admin-empty">Chargement des comptes…</p> : adminUsers.length === 0 ? <p className="admin-empty">Aucun compte à afficher.</p> : <div className="admin-member-list">{adminUsers.map(member => userRole === 'super_admin' && member.role !== 'super_admin' && member.workspace_role !== 'owner' ? <form className="admin-member-row" key={member.id} onSubmit={event => void saveAdminMember(event, member)}><div className="admin-member-email"><strong>{member.email}</strong><span>{member.id === userId ? 'Votre compte' : `Inscrit le ${new Date(member.created_at).toLocaleDateString('fr-FR')}`}</span></div><label className="field">Prénom<input required value={member.first_name} onChange={event => editAdminMember(member.id, 'first_name', event.target.value)} /></label><label className="field">Nom<input required value={member.last_name} onChange={event => editAdminMember(member.id, 'last_name', event.target.value)} /></label><label className="field">Rôle<select value={member.role} onChange={event => editAdminMember(member.id, 'role', event.target.value as AdminRole)}><option value="member">Membre</option><option value="admin">Administrateur</option></select></label><div className="admin-member-actions"><button className="button button-outline" disabled={savingAdminUserId === member.id}>{savingAdminUserId === member.id ? 'Enregistrement…' : 'Enregistrer'}</button>{member.id !== userId && <button type="button" className="button button-danger" onClick={() => void deleteAdminMember(member)} disabled={deletingAdminUserId === member.id} aria-label={`Retirer ${member.email} de cet espace`} title="Retirer de cet espace">{deletingAdminUserId === member.id ? 'Retrait…' : <><Trash2 size={15} /> Retirer</>}</button>}</div></form> : <div className="admin-member-row admin-member-readonly" key={member.id}><div className="admin-member-email"><strong>{member.email}</strong><span>{member.id === userId ? 'Votre compte' : `Inscrit le ${new Date(member.created_at).toLocaleDateString('fr-FR')}`}</span></div><div className="admin-member-name"><span>Prénom</span><strong>{member.first_name || '—'}</strong></div><div className="admin-member-name"><span>Nom</span><strong>{member.last_name || '—'}</strong></div><div className="admin-member-role">{member.workspace_role === 'owner' ? 'Propriétaire' : member.role === 'super_admin' ? 'Super admin' : member.role === 'admin' ? 'Administrateur' : 'Membre'}</div>{userRole === 'super_admin' && member.id !== userId && member.role !== 'super_admin' && member.workspace_role !== 'owner' && <button className="button button-danger" onClick={() => void deleteAdminMember(member)} disabled={deletingAdminUserId === member.id}>{deletingAdminUserId === member.id ? 'Retrait…' : <><Trash2 size={15} /> Retirer</>}</button>}</div>)}</div>}</section>
           </>}
